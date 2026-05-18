@@ -39,3 +39,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local database
+life.db
+life.db-shm
+life.db-wal
+ruvector.db
+
+# screenshots
+*.png
+*.jpg
+*.jpeg
+
+# playwright
+.playwright-mcp/
