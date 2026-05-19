@@ -23,6 +23,22 @@ import {
   STATUS_CONFIG, STATUS_ORDER, PRIORITY_CONFIG, CATEGORY_CONFIG,
 } from "@/lib/types/goals";
 
+function SprintBadge({ inSprint, onChange }: { inSprint: boolean; onChange: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      title={inSprint ? "Remove from this week's board" : "Add to this week's board"}
+      className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full border transition-all ${
+        inSprint
+          ? "border-violet-500/50 bg-violet-500/15 text-violet-400 hover:bg-violet-500/25"
+          : "border-border text-muted-foreground/50 hover:border-violet-500/40 hover:text-violet-400"
+      }`}
+    >
+      {inSprint ? "📌 sprint" : "+ sprint"}
+    </button>
+  );
+}
+
 const CATEGORY_ICONS: Record<ProjectCategory, React.ElementType> = {
   project: Layers,
   certification: Award,
@@ -44,10 +60,12 @@ const STATUS_ICONS: Record<IssueStatus, React.ElementType> = {
 function IssueRow({
   issue,
   onStatusCycle,
+  onSprintToggle,
   onClick,
 }: {
   issue: Issue;
   onStatusCycle: (id: number, next: IssueStatus) => void;
+  onSprintToggle: (id: number, inSprint: boolean) => void;
   onClick: (issue: Issue) => void;
 }) {
   const cfg = STATUS_CONFIG[issue.status];
@@ -99,6 +117,10 @@ function IssueRow({
             {dueSoon < 0 ? `${Math.abs(dueSoon)}d overdue` : dueSoon === 0 ? "Due today" : `${dueSoon}d`}
           </span>
         )}
+        <SprintBadge
+          inSprint={!!(issue as Issue & { inSprint?: boolean }).inSprint}
+          onChange={() => onSprintToggle(issue.id, !(issue as Issue & { inSprint?: boolean }).inSprint)}
+        />
       </div>
     </div>
   );
@@ -152,12 +174,14 @@ function StatusGroup({
   status,
   issues,
   onStatusCycle,
+  onSprintToggle,
   onIssueClick,
   onAdd,
 }: {
   status: IssueStatus;
   issues: Issue[];
   onStatusCycle: (id: number, next: IssueStatus) => void;
+  onSprintToggle: (id: number, inSprint: boolean) => void;
   onIssueClick: (issue: Issue) => void;
   onAdd: (title: string, status: IssueStatus) => void;
 }) {
@@ -191,6 +215,7 @@ function StatusGroup({
               key={issue.id}
               issue={issue}
               onStatusCycle={onStatusCycle}
+              onSprintToggle={onSprintToggle}
               onClick={onIssueClick}
             />
           ))}
@@ -393,6 +418,15 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function toggleSprint(issueId: number, inSprint: boolean) {
+    await fetch(`/api/issues/${issueId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inSprint }),
+    });
+    setIssues((prev) => prev.map((i) => i.id === issueId ? { ...i, inSprint } as Issue : i));
+  }
+
   async function addIssue(title: string, status: IssueStatus) {
     const res = await fetch(`/api/projects/${id}/issues`, {
       method: "POST",
@@ -500,6 +534,7 @@ export default function ProjectDetailPage() {
               status={status}
               issues={grouped[status]}
               onStatusCycle={cycleStatus}
+              onSprintToggle={toggleSprint}
               onIssueClick={setSelectedIssue}
               onAdd={addIssue}
             />

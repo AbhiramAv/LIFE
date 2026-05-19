@@ -1,4 +1,4 @@
-import { pgTable, text, integer, real, boolean, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, real, boolean, serial } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // ─── Fitness ─────────────────────────────────────────────────────────────────
@@ -7,7 +7,7 @@ export const exercises = pgTable("exercises", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   category: text("category").notNull(), // push|pull|legs|core|cardio|other
-  muscleGroups: text("muscle_groups").notNull(), // JSON string: string[]
+  muscleGroups: text("muscle_groups").notNull(),
   secondaryMuscles: text("secondary_muscles").notNull().default("[]"),
   isCustom: boolean("is_custom").notNull().default(false),
 });
@@ -77,6 +77,7 @@ export const dailyEntries = pgTable("daily_entries", {
 export const habits = pgTable("habits", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  biggerGoal: text("bigger_goal"),          // overarching goal this habit serves (board display title)
   frequency: text("frequency").notNull().default("daily"), // daily|weekly
   targetDaysPerWeek: integer("target_days_per_week").notNull().default(7),
   color: text("color").notNull().default("#6366f1"),
@@ -89,8 +90,11 @@ export const habitLogs = pgTable("habit_logs", {
   habitId: integer("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   completed: boolean("completed").notNull().default(true),
+  logStatus: text("log_status").notNull().default("completed"), // completed|skipped|missed
   notes: text("notes"),
 });
+
+// ─── Goals (legacy) ───────────────────────────────────────────────────────────
 
 export const goals = pgTable("goals", {
   id: serial("id").primaryKey(),
@@ -110,7 +114,7 @@ export const goalMilestones = pgTable("goal_milestones", {
   completedAt: text("completed_at"),
 });
 
-// ─── Projects & Issues (ticketing system) ─────────────────────────────────────
+// ─── Projects & Issues ────────────────────────────────────────────────────────
 
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
@@ -129,12 +133,25 @@ export const issues = pgTable("issues", {
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
-  status: text("status").notNull().default("todo"), // backlog|todo|in_progress|in_review|done|cancelled
+  status: text("status").notNull().default("todo"), // backlog|todo|in_progress|in_review|done|cancelled|skipped
   priority: text("priority").notNull().default("none"), // urgent|high|medium|low|none
   label: text("label"),
   dueDate: text("due_date"),
   sortOrder: integer("sort_order").notNull().default(0),
+  inSprint: boolean("in_sprint").notNull().default(false), // on the current week's board
   completedAt: text("completed_at"),
   createdAt: text("created_at").notNull().default(sql`now()`),
   updatedAt: text("updated_at").notNull().default(sql`now()`),
+});
+
+// ─── Calendar Events ──────────────────────────────────────────────────────────
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  date: text("date").notNull(),   // YYYY-MM-DD
+  time: text("time"),             // HH:MM (optional)
+  color: text("color").notNull().default("#6366f1"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });

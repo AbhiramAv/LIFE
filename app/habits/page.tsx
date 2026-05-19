@@ -19,7 +19,7 @@ function dateMinusDays(dateStr: string, days: number): string {
 
 const today = localToday();
 
-type Habit = { id: number; name: string; color: string; frequency: string; targetDaysPerWeek: number };
+type Habit = { id: number; name: string; biggerGoal: string | null; color: string; frequency: string; targetDaysPerWeek: number };
 type HabitLog = { habitId: number; date: string; completed: boolean };
 
 const COLORS = [
@@ -61,6 +61,7 @@ export default function HabitsPage() {
   const [logs, setLogs]         = useState<HabitLog[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName]   = useState("");
+  const [biggerGoal, setBiggerGoal] = useState("");
   const [color, setColor]       = useState(COLORS[0].value);
   const [freqKey, setFreqKey]   = useState("daily");
   const [loading, setLoading]   = useState(true);
@@ -104,6 +105,7 @@ export default function HabitsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: newName.trim(),
+        biggerGoal: biggerGoal.trim() || null,
         color,
         frequency: freqKey === "daily" || freqKey === "weekly" ? freqKey : "weekly",
         targetDaysPerWeek: freq.days,
@@ -111,8 +113,7 @@ export default function HabitsPage() {
     });
     const habit = await res.json();
     setHabits((prev) => [...prev, habit]);
-    setNewName("");
-    setFreqKey("daily");
+    setNewName(""); setBiggerGoal(""); setFreqKey("daily");
     setShowForm(false);
   }
 
@@ -159,12 +160,23 @@ export default function HabitsPage() {
       {showForm && (
         <form onSubmit={addHabit} className="rounded-xl border border-border bg-card p-4 space-y-4">
           <p className="text-sm font-semibold">New habit</p>
-          <Input
-            placeholder="e.g. Meditate, Read 20 mins, Walk..."
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-          />
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Bigger goal this serves</p>
+            <Input
+              placeholder="e.g. Health & Fitness, Mental clarity..."
+              value={biggerGoal}
+              onChange={(e) => setBiggerGoal(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Habit name</p>
+            <Input
+              placeholder="e.g. Meditate, Read 20 mins, Walk..."
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          </div>
 
           {/* Frequency */}
           <div className="space-y-1.5">
@@ -252,7 +264,9 @@ export default function HabitsPage() {
                   <p className={`text-sm font-medium truncate ${done ? "line-through text-muted-foreground" : ""}`}>
                     {habit.name}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">{freqLabel}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {habit.biggerGoal ? `${habit.biggerGoal} · ` : ""}{freqLabel}
+                  </p>
                 </div>
 
                 {/* Streak */}

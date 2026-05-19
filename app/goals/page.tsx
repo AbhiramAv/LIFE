@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, X, ArrowRight, Layers, Award, Briefcase, User, Trash2 } from "lucide-react";
+import { Plus, X, ArrowRight, Layers, Award, Briefcase, User, Trash2, Upload } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Project, ProjectCategory, ProjectStatus,
   CATEGORY_CONFIG, PROJECT_COLORS,
@@ -186,9 +187,75 @@ function ProjectCard({ project, onDeleted }: { project: Project; onDeleted: (id:
   );
 }
 
+function parseImport(raw: string): { goal: string; tasks: { title: string; priority?: string }[] } | null {
+  raw = raw.trim();
+  // Try JSON
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.goal && Array.isArray(parsed.tasks)) return parsed;
+  } catch {}
+  // Try markdown: # Project\n- [ ] Task or - Task
+  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  const titleLine = lines.find((l) => l.startsWith("#"));
+  if (!titleLine) return null;
+  const goal = titleLine.replace(/^#+\s*/, "");
+  const tasks = lines
+    .filter((l) => l.startsWith("- "))
+    .map((l) => ({ title: l.replace(/^-\s*(\[\s*[x ]?\s*\]\s*)?/, "").trim() }))
+    .filter((t) => t.title);
+  return tasks.length > 0 ? { goal, tasks } : null;
+}
+
+function ImportModal({ onImported, onClose }: { onImported: (p: Project) => void; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const parsed = parseImport(text);
+    if (!parsed) { setError("Could not parse. Use JSON {goal, tasks[]} or Markdown # Title\\n- task"); return; }
+    setSaving(true);
+    const res = await fetch("/api/goals/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parsed),
+    });
+    const data = await res.json();
+    onImported({ ...data.project, totalIssues: data.issues.length, doneIssues: 0 });
+    onClose();
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">Import from AI agent</p>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Paste JSON <code className="bg-muted px-1 rounded">{"{ goal, tasks[] }"}</code> or Markdown <code className="bg-muted px-1 rounded"># Title\n- task</code>
+      </p>
+      <form onSubmit={submit} className="space-y-3">
+        <Textarea
+          value={text}
+          onChange={(e) => { setText(e.target.value); setError(""); }}
+          placeholder={'# My Goal\n- Task 1\n- Task 2\n\nor\n\n{"goal":"My Goal","tasks":[{"title":"Task 1"}]}'}
+          className="font-mono text-xs min-h-[140px]"
+          autoFocus
+        />
+        {error && <p className="text-xs text-rose-400">{error}</p>}
+        <Button type="submit" size="sm" className="w-full" disabled={saving || !text.trim()}>
+          {saving ? "Importing..." : "Create project from this"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 export default function GoalsPage() {
   const [projects, setProjects]   = useState<Project[]>([]);
   const [showForm, setShowForm]   = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [loading, setLoading]     = useState(true);
 
   useEffect(() => {
@@ -207,17 +274,29 @@ export default function GoalsPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {active.length} active · {completed.length} completed
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowForm((s) => !s)} variant={showForm ? "secondary" : "default"}>
-          {showForm ? <><X className="h-4 w-4 mr-1" />Cancel</> : <><Plus className="h-4 w-4 mr-1" />New project</>}
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => { setShowImport((s) => !s); setShowForm(false); }}>
+            <Upload className="h-4 w-4 mr-1" />Import
+          </Button>
+          <Button size="sm" onClick={() => { setShowForm((s) => !s); setShowImport(false); }} variant={showForm ? "secondary" : "default"}>
+            {showForm ? <><X className="h-4 w-4 mr-1" />Cancel</> : <><Plus className="h-4 w-4 mr-1" />New project</>}
+          </Button>
+        </div>
       </div>
+
+      {showImport && (
+        <ImportModal
+          onImported={(p) => { setProjects((prev) => [p, ...prev]); setShowImport(false); }}
+          onClose={() => setShowImport(false)}
+        />
+      )}
 
       {showForm && <NewProjectForm onCreated={(p) => { setProjects((prev) => [p, ...prev]); setShowForm(false); }} />}
 

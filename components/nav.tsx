@@ -6,16 +6,18 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Heart, Target, Activity,
-  DollarSign, Layers, Moon, Sun, Sparkles,
+  DollarSign, Layers, Moon, Sun, Sparkles, Camera, CalendarDays,
 } from "lucide-react";
 
 const links = [
-  { href: "/",        label: "Dashboard", icon: LayoutDashboard, color: "text-violet-400" },
-  { href: "/mood",    label: "Mood",      icon: Heart,           color: "text-rose-400"   },
-  { href: "/habits",  label: "Habits",    icon: Target,          color: "text-violet-400" },
-  { href: "/fitness", label: "Fitness",   icon: Activity,        color: "text-emerald-400"},
-  { href: "/finance", label: "Finance",   icon: DollarSign,      color: "text-amber-400"  },
-  { href: "/goals",   label: "Goals",     icon: Layers,          color: "text-sky-400"    },
+  { href: "/",          label: "Dashboard", icon: LayoutDashboard, color: "text-violet-400" },
+  { href: "/mood",      label: "Mood",       icon: Heart,           color: "text-rose-400"   },
+  { href: "/habits",    label: "Habits",     icon: Target,          color: "text-violet-400" },
+  { href: "/fitness",   label: "Fitness",    icon: Activity,        color: "text-emerald-400"},
+  { href: "/finance",   label: "Finance",    icon: DollarSign,      color: "text-amber-400"  },
+  { href: "/goals",     label: "Goals",      icon: Layers,          color: "text-sky-400"    },
+  { href: "/calendar",  label: "Calendar",   icon: CalendarDays,    color: "text-indigo-400" },
+  { href: "/memories",  label: "Memories",   icon: Camera,          color: "text-fuchsia-400"},
 ];
 
 function ThemeToggle() {
@@ -51,7 +53,7 @@ export function Nav() {
           </div>
         </div>
 
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
+        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
           {links.map(({ href, label, icon: Icon, color }) => {
             const active = pathname === href;
             return (
@@ -78,21 +80,21 @@ export function Nav() {
         </div>
       </aside>
 
-      {/* Mobile bottom bar */}
+      {/* Mobile bottom bar — show first 6 links */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/90 backdrop-blur-xl">
         <div className="flex items-center justify-around px-1 py-1">
-          {links.slice(0, 5).map(({ href, label, icon: Icon, color }) => {
+          {links.slice(0, 6).map(({ href, label, icon: Icon, color }) => {
             const active = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl transition-all ${
+                className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl transition-all ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 <div className={`p-1.5 rounded-xl transition-all ${active ? "bg-primary/15" : ""}`}>
-                  <Icon className={`h-5 w-5 transition-colors ${active ? "text-primary" : color}`} />
+                  <Icon className={`h-4 w-4 transition-colors ${active ? "text-primary" : color}`} />
                 </div>
                 <span className="text-[9px] font-medium">{label}</span>
               </Link>

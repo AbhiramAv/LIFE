@@ -18,10 +18,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .where(and(eq(habitLogs.habitId, habitId), eq(habitLogs.date, date)))
     .limit(1);
 
+  const logStatus: string = body.logStatus ?? (completed === false ? "missed" : "completed");
+
   if (existing.length > 0) {
     const updated = await db
       .update(habitLogs)
-      .set({ completed: completed ?? true })
+      .set({ completed: completed ?? true, logStatus })
       .where(and(eq(habitLogs.habitId, habitId), eq(habitLogs.date, date)))
       .returning();
     return NextResponse.json(updated[0]);
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const inserted = await db
     .insert(habitLogs)
-    .values({ habitId, date, completed: completed ?? true })
+    .values({ habitId, date, completed: completed ?? true, logStatus })
     .returning();
   return NextResponse.json(inserted[0], { status: 201 });
 }
