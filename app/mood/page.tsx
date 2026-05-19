@@ -4,33 +4,100 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { CheckCircle2, Flame, Brain, SmilePlus, Wind, Frown } from "lucide-react";
+import { CheckCircle2, SmilePlus, Flame, Brain, Wind, Frown } from "lucide-react";
 
-const today = new Date().toISOString().split("T")[0];
-
-const SCORE_CONFIG = [
-  { key: "moodScore"   as const, label: "Mood",   icon: SmilePlus, color: "text-rose-400",   low: "Awful",    high: "Fantastic"   },
-  { key: "energyScore" as const, label: "Energy", icon: Flame,     color: "text-amber-400",  low: "Drained",  high: "Energized"   },
-  { key: "stressScore" as const, label: "Stress", icon: Brain,     color: "text-violet-400", low: "Calm",     high: "Overwhelmed" },
-];
-
-function getEmoji(score: number) {
-  if (score <= 2) return "😞";
-  if (score <= 4) return "😕";
-  if (score <= 6) return "😐";
-  if (score <= 8) return "😊";
-  return "😄";
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+const today = localToday();
+
+// 5 emoji options per category — each maps to a score value 2,4,6,8,10
+const CATEGORIES = [
+  {
+    key: "moodScore" as const,
+    label: "Mood",
+    icon: SmilePlus,
+    color: "text-rose-400",
+    options: [
+      { emoji: "😭", label: "Awful",    value: 2  },
+      { emoji: "😔", label: "Bad",      value: 4  },
+      { emoji: "😐", label: "Okay",     value: 6  },
+      { emoji: "😊", label: "Good",     value: 8  },
+      { emoji: "🤩", label: "Amazing",  value: 10 },
+    ],
+  },
+  {
+    key: "energyScore" as const,
+    label: "Energy",
+    icon: Flame,
+    color: "text-amber-400",
+    options: [
+      { emoji: "🪫", label: "Dead",      value: 2  },
+      { emoji: "😴", label: "Tired",     value: 4  },
+      { emoji: "⚡", label: "Decent",    value: 6  },
+      { emoji: "💪", label: "Strong",    value: 8  },
+      { emoji: "🚀", label: "Explosive", value: 10 },
+    ],
+  },
+  {
+    key: "stressScore" as const,
+    label: "Stress",
+    icon: Brain,
+    color: "text-violet-400",
+    options: [
+      { emoji: "😌", label: "Calm",       value: 2  },
+      { emoji: "🙂", label: "Relaxed",    value: 4  },
+      { emoji: "😤", label: "Tense",      value: 6  },
+      { emoji: "😰", label: "Stressed",   value: 8  },
+      { emoji: "🤯", label: "Overwhelmed",value: 10 },
+    ],
+  },
+];
 
 type Scores = { moodScore: number; energyScore: number; stressScore: number };
 
+function EmojiPicker({
+  options,
+  value,
+  onChange,
+}: {
+  options: { emoji: string; label: string; value: number }[];
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex gap-1.5 sm:gap-2">
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all duration-150 ${
+              active
+                ? "border-primary bg-primary/10 scale-105 shadow-sm"
+                : "border-border bg-muted/40 hover:border-primary/40 hover:bg-muted/80"
+            }`}
+          >
+            <span className="text-xl sm:text-2xl leading-none">{opt.emoji}</span>
+            <span className={`text-[10px] font-medium leading-none ${active ? "text-primary" : "text-muted-foreground"}`}>
+              {opt.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function MoodPage() {
-  const [scores, setScores] = useState<Scores>({ moodScore: 5, energyScore: 5, stressScore: 5 });
-  const [notes, setNotes]       = useState("");
+  const [scores, setScores] = useState<Scores>({ moodScore: 6, energyScore: 6, stressScore: 6 });
+  const [notes, setNotes]         = useState("");
   const [gratitude, setGratitude] = useState("");
-  const [saving, setSaving]     = useState(false);
-  const [saved, setSaved]       = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
 
   useEffect(() => {
     fetch(`/api/mood?date=${today}`)
@@ -61,9 +128,12 @@ export default function MoodPage() {
     weekday: "long", month: "long", day: "numeric",
   });
 
+  // Overall: mood + energy + (invert stress so calm=high). Average → scale to 1-10
   const overallScore = Math.round(
-    (scores.moodScore + scores.energyScore + (10 - scores.stressScore)) / 3
+    (scores.moodScore + scores.energyScore + (12 - scores.stressScore)) / 3
   );
+
+  const moodEmoji = CATEGORIES[0].options.find((o) => o.value === scores.moodScore)?.emoji ?? "😐";
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
@@ -74,7 +144,7 @@ export default function MoodPage() {
           <h1 className="text-2xl font-bold tracking-tight">Daily Check-in</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{displayDate}</p>
         </div>
-        <span className="text-4xl select-none">{getEmoji(scores.moodScore)}</span>
+        <span className="text-4xl select-none leading-none mt-1">{moodEmoji}</span>
       </div>
 
       {/* Overall bar */}
@@ -92,27 +162,20 @@ export default function MoodPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Sliders */}
+
+        {/* Emoji pickers */}
         <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
-          {SCORE_CONFIG.map(({ key, label, icon: Icon, color, low, high }) => (
+          {CATEGORIES.map(({ key, label, icon: Icon, color, options }) => (
             <div key={key} className="px-4 py-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon className={`h-4 w-4 ${color}`} />
-                  <span className="text-sm font-medium">{label}</span>
-                </div>
-                <span className="text-xl font-bold tabular-nums w-7 text-right">{scores[key]}</span>
+              <div className="flex items-center gap-2">
+                <Icon className={`h-4 w-4 ${color}`} />
+                <span className="text-sm font-medium">{label}</span>
               </div>
-              <Slider
-                min={1} max={10} step={1}
-                value={[scores[key]]}
-                onValueChange={(v) =>
-                  setScores((s) => ({ ...s, [key]: Array.isArray(v) ? v[0] : v }))
-                }
+              <EmojiPicker
+                options={options}
+                value={scores[key]}
+                onChange={(v) => setScores((s) => ({ ...s, [key]: v }))}
               />
-              <div className="flex justify-between text-[11px] text-muted-foreground">
-                <span>{low}</span><span>{high}</span>
-              </div>
             </div>
           ))}
         </div>

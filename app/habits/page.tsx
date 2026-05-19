@@ -6,7 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Check, Plus, Flame, X } from "lucide-react";
 
-const today = new Date().toISOString().split("T")[0];
+// Local date — avoids UTC offset giving "tomorrow" for UTC- timezones at night
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateMinusDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() - days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const today = localToday();
 
 type Habit = { id: number; name: string; color: string; frequency: string };
 type HabitLog = { habitId: number; date: string; completed: boolean };
@@ -25,11 +37,14 @@ function computeStreak(logs: HabitLog[], habitId: number): number {
   const done = new Set(
     logs.filter((l) => l.habitId === habitId && l.completed).map((l) => l.date)
   );
+  // If today is logged, start from today. If not, start from yesterday —
+  // so a streak built over N days doesn't show 0 just because today isn't done yet.
+  const startDate = done.has(today) ? today : dateMinusDays(today, 1);
   let streak = 0;
-  const d = new Date(today);
-  while (done.has(d.toISOString().split("T")[0])) {
+  let cursor = startDate;
+  while (done.has(cursor)) {
     streak++;
-    d.setDate(d.getDate() - 1);
+    cursor = dateMinusDays(cursor, 1);
   }
   return streak;
 }

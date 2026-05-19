@@ -49,51 +49,53 @@
 
 /* ─── Light Mode ──────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(0.98 0.004 285);
-  --foreground: oklch(0.12 0.02 285);
+  /* Distinct lavender-grey base — cards (white) pop clearly against it */
+  --background: oklch(0.92 0.028 285);
+  --foreground: oklch(0.1 0.025 285);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.12 0.02 285);
+  --card: oklch(0.99 0.004 285);
+  --card-foreground: oklch(0.1 0.025 285);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.12 0.02 285);
+  --popover: oklch(0.99 0.004 285);
+  --popover-foreground: oklch(0.1 0.025 285);
 
-  /* Violet primary */
-  --primary: oklch(0.58 0.22 285);
-  --primary-foreground: oklch(0.98 0.004 285);
+  /* Violet primary — richer in light mode */
+  --primary: oklch(0.52 0.25 285);
+  --primary-foreground: oklch(0.99 0 0);
 
-  --secondary: oklch(0.94 0.015 285);
-  --secondary-foreground: oklch(0.35 0.05 285);
+  --secondary: oklch(0.88 0.035 285);
+  --secondary-foreground: oklch(0.25 0.06 285);
 
-  --muted: oklch(0.95 0.01 285);
-  --muted-foreground: oklch(0.52 0.04 285);
+  --muted: oklch(0.89 0.025 285);
+  --muted-foreground: oklch(0.42 0.06 285);
 
-  --accent: oklch(0.94 0.015 285);
-  --accent-foreground: oklch(0.35 0.05 285);
+  --accent: oklch(0.88 0.035 285);
+  --accent-foreground: oklch(0.25 0.06 285);
 
-  --destructive: oklch(0.62 0.24 25);
+  --destructive: oklch(0.55 0.26 25);
 
-  --border: oklch(0.9 0.015 285);
-  --input: oklch(0.9 0.015 285);
-  --ring: oklch(0.58 0.22 285);
+  --border: oklch(0.82 0.04 285);
+  --input: oklch(0.86 0.03 285);
+  --ring: oklch(0.52 0.25 285);
 
   /* Domain accent chart colors */
-  --chart-1: oklch(0.62 0.24 358);   /* rose  — mood */
-  --chart-2: oklch(0.58 0.22 285);   /* violet — habits */
-  --chart-3: oklch(0.56 0.18 162);   /* emerald — fitness */
-  --chart-4: oklch(0.75 0.18 75);    /* amber — finance */
-  --chart-5: oklch(0.58 0.2 232);    /* sky — misc */
+  --chart-1: oklch(0.58 0.26 358);   /* rose  — mood */
+  --chart-2: oklch(0.52 0.25 285);   /* violet — habits */
+  --chart-3: oklch(0.5 0.2 162);     /* emerald — fitness */
+  --chart-4: oklch(0.65 0.2 75);     /* amber — finance */
+  --chart-5: oklch(0.52 0.22 232);   /* sky — misc */
 
   --radius: 0.75rem;
 
-  --sidebar: oklch(0.97 0.008 285);
-  --sidebar-foreground: oklch(0.25 0.03 285);
-  --sidebar-primary: oklch(0.58 0.22 285);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.93 0.015 285);
-  --sidebar-accent-foreground: oklch(0.25 0.03 285);
-  --sidebar-border: oklch(0.9 0.015 285);
-  --sidebar-ring: oklch(0.58 0.22 285);
+  /* Sidebar: darker than bg so it reads as a distinct panel */
+  --sidebar: oklch(0.86 0.04 285);
+  --sidebar-foreground: oklch(0.18 0.04 285);
+  --sidebar-primary: oklch(0.52 0.25 285);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.82 0.045 285);
+  --sidebar-accent-foreground: oklch(0.18 0.04 285);
+  --sidebar-border: oklch(0.78 0.05 285);
+  --sidebar-ring: oklch(0.52 0.25 285);
 }
 
 /* ─── Dark Mode ───────────────────────────────────────────────────────────── */
