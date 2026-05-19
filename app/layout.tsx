@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <div className="flex flex-col md:flex-row min-h-screen">
             <Nav />
-            <main className="flex-1 pb-20 md:pb-0 overflow-y-auto min-h-screen">
+            <main className="flex-1 pb-4 md:pb-0 overflow-y-auto min-h-screen">
               {children}
             </main>
           </div>
