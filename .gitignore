@@ -58,3 +58,7 @@ ruvector.db
 *.rvf
 *.rvf.lock
 agentdb.*
+
+# MCP config (contains token references)
+.mcp.json
+agentdb.*
