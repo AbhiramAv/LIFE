@@ -1,4 +1,4 @@
-import { db } from "./adapters/sqlite";
+import { db } from "./adapters/postgres";
 import { exercises } from "./schema";
 import { EXERCISES } from "../../data/exercises";
 
