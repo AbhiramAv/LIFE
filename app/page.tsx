@@ -229,11 +229,15 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
 }) {
   const [allIssues, setAllIssues] = useState<AnyIssue[]|null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeProject, setActiveProject] = useState<string|null>(null);
 
   useEffect(() => {
     if (open && !allIssues) {
       setLoading(true);
-      fetch("/api/issues").then(r=>r.json()).then(data => { setAllIssues(Array.isArray(data)?data:[]); setLoading(false); });
+      fetch("/api/issues").then(r=>r.json()).then(data => {
+        setAllIssues(Array.isArray(data) ? data : []);
+        setLoading(false);
+      });
     }
   }, [open, allIssues]);
 
@@ -242,59 +246,146 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
     [allIssues, sprintIds]
   );
   const inSprint = useMemo(() => allIssues?.filter(i => sprintIds.has(i.id)) ?? [], [allIssues, sprintIds]);
-  const byProject = useMemo(() => {
-    const g: Record<string,{color:string;issues:AnyIssue[]}> = {};
-    backlog.forEach(i => { if (!g[i.projectTitle]) g[i.projectTitle]={color:i.projectColor,issues:[]}; g[i.projectTitle].issues.push(i); });
-    return g;
+
+  // projects ordered by first appearance
+  const projects = useMemo(() => {
+    const seen = new Map<string,{color:string;issues:AnyIssue[]}>();
+    backlog.forEach(i => {
+      if (!seen.has(i.projectTitle)) seen.set(i.projectTitle, {color:i.projectColor,issues:[]});
+      seen.get(i.projectTitle)!.issues.push(i);
+    });
+    return Array.from(seen.entries()).map(([name,v]) => ({name,...v}));
   }, [backlog]);
+
+  // auto-select first project when list loads
+  useEffect(() => {
+    if (projects.length > 0 && (activeProject === null || !projects.find(p => p.name === activeProject))) {
+      setActiveProject(projects[0].name);
+    }
+  }, [projects, activeProject]);
+
+  const activeTickets = useMemo(
+    () => projects.find(p => p.name === activeProject)?.issues ?? [],
+    [projects, activeProject]
+  );
 
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <aside className="relative w-[440px] max-w-full bg-card border-l border-border flex flex-col shadow-2xl">
+      <aside className="relative w-[520px] max-w-full bg-card border-l border-border flex flex-col shadow-2xl">
+
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="font-semibold text-sm">Plan this week</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{inSprint.length} tickets in sprint</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{inSprint.length} ticket{inSprint.length!==1?"s":""} in sprint</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <X className="h-4 w-4" />
+          </button>
         </div>
+
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4 border-r border-border space-y-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Backlog</p>
-            {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
-            {!loading && Object.keys(byProject).length===0 && <p className="text-xs text-muted-foreground italic">All tickets are in the sprint.</p>}
-            {Object.entries(byProject).map(([proj,{color,issues}]) => (
-              <div key={proj} className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-2 w-2 rounded-full" style={{backgroundColor:color}} />
-                  <p className="text-[10px] font-semibold text-muted-foreground truncate">{proj}</p>
-                </div>
-                {issues.map(issue => (
-                  <button key={issue.id} onClick={()=>onToggle(issue.id,true)}
-                    className="group w-full text-left text-xs px-2 py-1.5 rounded-lg hover:bg-muted flex items-center gap-2 transition-colors">
-                    <span className="flex-1 truncate">{issue.title}</span>
-                    <Plus className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0" />
+
+          {/* ── Left: project folder tabs + tickets ── */}
+          <div className="flex flex-col flex-1 overflow-hidden border-r border-border">
+
+            {/* Folder tab strip */}
+            <div className="flex overflow-x-auto shrink-0 px-3 pt-3 gap-1 scrollbar-none">
+              {loading && <p className="text-xs text-muted-foreground px-1 py-2">Loading…</p>}
+              {!loading && projects.length === 0 && (
+                <p className="text-xs text-muted-foreground italic px-1 py-2">All tickets are in the sprint.</p>
+              )}
+              {projects.map(({ name, color }) => {
+                const active = name === activeProject;
+                return (
+                  <button
+                    key={name}
+                    onClick={() => setActiveProject(name)}
+                    style={{
+                      borderTopColor: active ? color : "transparent",
+                      borderTopWidth: 2,
+                      color: active ? color : undefined,
+                      backgroundColor: active ? `${color}12` : undefined,
+                      boxShadow: active ? `inset 0 -2px 0 ${color}30` : undefined,
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-medium whitespace-nowrap border border-b-0 transition-all shrink-0 ${
+                      active
+                        ? "border-border"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted border-transparent"
+                    }`}
+                  >
+                    <span className="h-2 w-2 rounded-full shrink-0" style={{backgroundColor:color}} />
+                    {name}
                   </button>
-                ))}
-              </div>
-            ))}
+                );
+              })}
+            </div>
+
+            {/* Divider that aligns under active tab */}
+            <div className="h-px bg-border shrink-0 mx-3" />
+
+            {/* Ticket list for active project */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+              {activeTickets.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No tickets in backlog for this project.</p>
+              )}
+              {activeTickets.map(issue => {
+                const C = issue.projectColor;
+                return (
+                  <button
+                    key={issue.id}
+                    onClick={() => onToggle(issue.id, true)}
+                    style={{
+                      borderTopColor: `${C}25`,
+                      borderRightColor: `${C}25`,
+                      borderBottomColor: `${C}25`,
+                      borderLeftColor: C,
+                      borderLeftWidth: 3,
+                    }}
+                    className="group w-full text-left text-xs px-3 py-2.5 rounded-xl border bg-background hover:bg-muted flex items-center gap-2.5 transition-all hover:translate-y-[-1px] hover:shadow-sm"
+                  >
+                    <span className="flex-1 leading-snug">{issue.title}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
+                      style={{backgroundColor:`${C}20`,color:C}}>{issue.status}</span>
+                    <Plus className="h-3.5 w-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{color:C}} />
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">This week</p>
-            {inSprint.length===0 && <p className="text-xs text-muted-foreground italic">← Click tickets to add</p>}
-            {inSprint.map(issue => (
-              <div key={issue.id} className="flex items-start gap-2 px-2.5 py-2 rounded-xl text-xs border"
-                style={{borderColor:`${issue.projectColor}40`,backgroundColor:`${issue.projectColor}10`}}>
-                <div className="h-2 w-2 rounded-full mt-1 shrink-0" style={{backgroundColor:issue.projectColor}} />
-                <span className="flex-1 leading-snug">{issue.title}</span>
-                <button onClick={()=>onToggle(issue.id,false)} className="text-muted-foreground hover:text-rose-400 transition-colors shrink-0 mt-0.5">
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
+
+          {/* ── Right: this week ── */}
+          <div className="w-[200px] shrink-0 flex flex-col overflow-hidden">
+            <div className="px-4 pt-4 pb-2 shrink-0">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">This week</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+              {inSprint.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">← add tickets</p>
+              )}
+              {inSprint.map(issue => (
+                <div key={issue.id}
+                  style={{
+                    borderTopColor: `${issue.projectColor}35`,
+                    borderRightColor: `${issue.projectColor}35`,
+                    borderBottomColor: `${issue.projectColor}35`,
+                    borderLeftColor: issue.projectColor,
+                    borderLeftWidth: 3,
+                    backgroundColor: `${issue.projectColor}0d`,
+                  }}
+                  className="flex items-start gap-2 px-2.5 py-2 rounded-xl text-xs border group">
+                  <span className="flex-1 leading-snug break-words min-w-0">{issue.title}</span>
+                  <button onClick={() => onToggle(issue.id, false)}
+                    className="text-muted-foreground hover:text-rose-400 transition-colors shrink-0 mt-0.5 opacity-0 group-hover:opacity-100">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
+
         </div>
       </aside>
     </div>
@@ -329,7 +420,9 @@ function IssueCard({ issue, onRequestDone, onStatusChange, onDragStart, onDragEn
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{
-        borderColor: hov ? `${C}55` : `${C}28`,
+        borderTopColor: hov ? `${C}55` : `${C}28`,
+        borderRightColor: hov ? `${C}55` : `${C}28`,
+        borderBottomColor: hov ? `${C}55` : `${C}28`,
         borderLeftColor: C, borderLeftWidth: 3,
         boxShadow: hov ? `0 8px 24px -4px ${C}28, 0 0 0 1px ${C}20` : `0 1px 4px ${C}10`,
         transform: hov ? "translateY(-2px)" : "translateY(0)",
@@ -376,7 +469,9 @@ function HabitCard({ habit, weekDone, alreadyDoneToday, onRequestDone, onDragSta
     <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{
-        borderColor: hov ? `${C}55` : `${C}28`,
+        borderTopColor: hov ? `${C}55` : `${C}28`,
+        borderRightColor: hov ? `${C}55` : `${C}28`,
+        borderBottomColor: hov ? `${C}55` : `${C}28`,
         borderLeftColor: C, borderLeftWidth: 3,
         boxShadow: hov ? `0 8px 24px -4px ${C}28, 0 0 0 1px ${C}20` : `0 1px 4px ${C}10`,
         transform: hov ? "translateY(-2px)" : "translateY(0)",
