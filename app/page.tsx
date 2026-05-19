@@ -407,28 +407,34 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const [moodData, habitsData, sprintData, logsData, workoutsData] = await Promise.all([
-        fetch(`/api/mood?date=${today}`).then((r) => r.json()),
-        fetch("/api/habits").then((r) => r.json()),
-        fetch("/api/issues?sprint=true").then((r) => r.json()),
-        fetch("/api/habits/logs").then((r) => r.json()),
-        fetch("/api/fitness/sessions").then((r) => r.json()),
-      ]);
+      try {
+        const safeJson = (r: Response) => r.ok ? r.json() : Promise.resolve(null);
+        const [moodData, habitsData, sprintData, logsData, workoutsData] = await Promise.all([
+          fetch(`/api/mood?date=${today}`).then(safeJson),
+          fetch("/api/habits").then(safeJson),
+          fetch("/api/issues?sprint=true").then(safeJson),
+          fetch("/api/habits/logs").then(safeJson),
+          fetch("/api/fitness/sessions").then(safeJson),
+        ]);
 
-      setMood(moodData?.moodScore ? moodData : null);
-      setHabits(Array.isArray(habitsData) ? habitsData : []);
-      setSprintIssues(Array.isArray(sprintData) ? sprintData : []);
-      setHabitLogs(Array.isArray(logsData) ? logsData : []);
-      setWorkouts(Array.isArray(workoutsData) ? workoutsData : []);
+        setMood(moodData?.moodScore ? moodData : null);
+        const habits = Array.isArray(habitsData) ? habitsData : [];
+        setHabits(habits);
+        setSprintIssues(Array.isArray(sprintData) ? sprintData : []);
+        setHabitLogs(Array.isArray(logsData) ? logsData : []);
+        setWorkouts(Array.isArray(workoutsData) ? workoutsData : []);
 
-      if (Array.isArray(habitsData) && habitsData.length > 0) {
-        const logs = await Promise.all(
-          habitsData.map((h: Habit) => fetch(`/api/habits/${h.id}/log`).then((r) => r.json()))
-        );
-        setTodayLogs(logs.flat().filter((l: HabitLog) => l.date === today));
+        if (habits.length > 0) {
+          const logs = await Promise.all(
+            habits.map((h: Habit) => fetch(`/api/habits/${h.id}/log`).then(safeJson))
+          );
+          setTodayLogs(logs.flat().filter((l: HabitLog | null) => l && l.date === today) as HabitLog[]);
+        }
+      } catch (err) {
+        console.error("Dashboard load error:", err);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
     load();
   }, [today]);
