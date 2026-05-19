@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, X, ArrowRight, Layers, Award, Briefcase, User } from "lucide-react";
+import { Plus, X, ArrowRight, Layers, Award, Briefcase, User, Trash2 } from "lucide-react";
 import {
   Project, ProjectCategory, ProjectStatus,
   CATEGORY_CONFIG, PROJECT_COLORS,
@@ -107,7 +107,8 @@ function NewProjectForm({ onCreated }: { onCreated: (p: Project) => void }) {
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project, onDeleted }: { project: Project; onDeleted: (id: number) => void }) {
+  const [deleting, setDeleting] = useState(false);
   const progress = project.totalIssues > 0
     ? Math.round((project.doneIssues / project.totalIssues) * 100)
     : 0;
@@ -115,6 +116,15 @@ function ProjectCard({ project }: { project: Project }) {
   const daysLeft = project.targetDate
     ? Math.ceil((new Date(project.targetDate + "T12:00:00").getTime() - Date.now()) / 86400000)
     : null;
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete "${project.title}" and all its tasks?`)) return;
+    setDeleting(true);
+    await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+    onDeleted(project.id);
+  }
 
   return (
     <Link href={`/goals/${project.id}`} className="group block">
@@ -134,7 +144,17 @@ function ProjectCard({ project }: { project: Project }) {
               </p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground/40 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="h-7 w-7 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-rose-500/15 hover:text-rose-400 text-muted-foreground/40 transition-all"
+              title="Delete project"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+            <ArrowRight className="h-4 w-4 text-muted-foreground/40 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all mt-0.5" />
+          </div>
         </div>
 
         {/* Progress */}
@@ -178,6 +198,10 @@ export default function GoalsPage() {
     });
   }, []);
 
+  function removeProject(id: number) {
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+  }
+
   const active    = projects.filter((p) => p.status === "active");
   const completed = projects.filter((p) => p.status === "completed");
 
@@ -212,7 +236,7 @@ export default function GoalsPage() {
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Active</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {active.map((p) => <ProjectCard key={p.id} project={p} />)}
+                {active.map((p) => <ProjectCard key={p.id} project={p} onDeleted={removeProject} />)}
               </div>
             </div>
           )}
@@ -220,7 +244,7 @@ export default function GoalsPage() {
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Completed</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {completed.map((p) => <ProjectCard key={p.id} project={p} />)}
+                {completed.map((p) => <ProjectCard key={p.id} project={p} onDeleted={removeProject} />)}
               </div>
             </div>
           )}

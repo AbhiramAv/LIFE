@@ -1,15 +1,35 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
-  Heart, Target, Activity, DollarSign, Layers, Camera,
-  ArrowRight, Check, Flame, Circle, CheckCircle2, MapPin,
+  LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
+import {
+  Heart, Target, Activity, DollarSign, Camera,
+  ArrowRight, Check, Flame, LayoutDashboard, BarChart2, Wallet,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { CATEGORY_CONFIG, STATUS_CONFIG, type Project, type Issue, type IssueStatus } from "@/lib/types/goals";
+import { STATUS_CONFIG, type Project, type Issue, type IssueStatus } from "@/lib/types/goals";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type AllIssue = {
+  id: number;
+  projectId: number;
+  title: string;
+  status: IssueStatus;
+  priority: string;
+  completedAt: string | null;
+  createdAt: string;
+  projectTitle: string;
+  projectColor: string;
+};
+type HabitLogDay = { date: string; completed: number };
+type WorkoutDay  = { date: string };
+type Habit       = { id: number; name: string; color: string };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function localToday(): string {
   const d = new Date();
@@ -25,271 +45,357 @@ function getGreeting(): string {
   return "Good night";
 }
 
-const MOOD_EMOJIS: Record<number, string> = { 2: "😭", 4: "😔", 6: "😐", 8: "😊", 10: "🤩" };
-const ENERGY_EMOJIS: Record<number, string> = { 2: "🪫", 4: "😴", 6: "⚡", 8: "💪", 10: "🚀" };
-const STRESS_EMOJIS: Record<number, string> = { 2: "😌", 4: "🙂", 6: "😤", 8: "😰", 10: "🤯" };
-
-function closestEmoji(map: Record<number, string>, value: number): string {
-  const keys = Object.keys(map).map(Number);
-  const nearest = keys.reduce((a, b) => Math.abs(b - value) < Math.abs(a - value) ? b : a);
-  return map[nearest];
+function dateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const STATUS_OPEN: IssueStatus[] = ["todo", "in_progress", "in_review"];
+// ─── Board tab ───────────────────────────────────────────────────────────────
 
-// ─── Section: Mood pulse ──────────────────────────────────────────────────────
+const BOARD_COLUMNS: { key: IssueStatus[]; label: string; color: string }[] = [
+  { key: ["backlog", "todo"],              label: "Todo",        color: "#6366f1" },
+  { key: ["in_progress", "in_review"],     label: "In Progress", color: "#f59e0b" },
+  { key: ["done"],                         label: "Done",        color: "#10b981" },
+];
 
-function MoodPulse({ mood }: { mood: { moodScore: number; energyScore: number; stressScore: number } | null }) {
+function IssueCard({ issue }: { issue: AllIssue }) {
   return (
-    <Link href="/mood" className="group block">
-      <div className="rounded-xl border border-rose-500/20 bg-card p-4 hover:border-rose-500/40 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-rose-500/15 flex items-center justify-center">
-              <Heart className="h-3.5 w-3.5 text-rose-400" />
-            </div>
-            <span className="text-sm font-semibold">Today's mood</span>
-          </div>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-all" />
+    <Link href={`/goals/${issue.projectId}`} className="block group">
+      <div className="rounded-lg border border-border bg-card p-3 space-y-2 hover:border-primary/30 hover:shadow-sm transition-all">
+        <p className="text-xs font-medium leading-snug">{issue.title}</p>
+        <div
+          className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+          style={{ backgroundColor: `${issue.projectColor}22`, color: issue.projectColor }}
+        >
+          {issue.projectTitle}
         </div>
-
-        {mood ? (
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: "Mood",   emoji: closestEmoji(MOOD_EMOJIS, mood.moodScore),   score: mood.moodScore },
-              { label: "Energy", emoji: closestEmoji(ENERGY_EMOJIS, mood.energyScore), score: mood.energyScore },
-              { label: "Stress", emoji: closestEmoji(STRESS_EMOJIS, mood.stressScore), score: mood.stressScore },
-            ].map(({ label, emoji, score }) => (
-              <div key={label} className="text-center">
-                <div className="text-2xl leading-none mb-1">{emoji}</div>
-                <div className="text-xs text-muted-foreground">{label}</div>
-                <div className="text-xs font-semibold">{score}/10</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Not logged yet</p>
-            <span className="text-xs font-medium text-rose-400 group-hover:underline">Log now →</span>
-          </div>
-        )}
       </div>
     </Link>
   );
 }
 
-// ─── Section: Habits ring ─────────────────────────────────────────────────────
+function BoardTab({ issues }: { issues: AllIssue[] }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {BOARD_COLUMNS.map(({ key, label, color }) => {
+        const col = issues.filter((i) => (key as string[]).includes(i.status));
+        const visible = label === "Done" ? col.slice(0, 15) : col;
+        return (
+          <div key={label} className="space-y-2">
+            <div className="flex items-center gap-2 pb-1 border-b border-border">
+              <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+              <span className="text-xs text-muted-foreground ml-auto">{col.length}</span>
+            </div>
+            <div className="space-y-2">
+              {visible.map((issue) => <IssueCard key={issue.id} issue={issue} />)}
+              {visible.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                  <p className="text-xs text-muted-foreground">Empty</p>
+                </div>
+              )}
+              {label === "Done" && col.length > 15 && (
+                <p className="text-[11px] text-muted-foreground text-center">+{col.length - 15} more</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
-type Habit = { id: number; name: string; color: string };
-type HabitLog = { habitId: number; date: string; completed: boolean };
+// ─── Analytics tab ───────────────────────────────────────────────────────────
 
-function HabitsWidget({ habits, todayDone }: { habits: Habit[]; todayDone: Set<number> }) {
+function ActivityCalendar({
+  habitLogs, workouts, totalHabits,
+}: {
+  habitLogs: HabitLogDay[];
+  workouts: WorkoutDay[];
+  totalHabits: number;
+}) {
+  const today = dateStr(new Date());
+  const habitMap = useMemo(
+    () => Object.fromEntries(habitLogs.map((l) => [l.date, l.completed])),
+    [habitLogs]
+  );
+  const workoutSet = useMemo(() => new Set(workouts.map((w) => w.date)), [workouts]);
+
+  // Build 53 weeks of grid starting from Sunday ~52 weeks ago
+  const weeks = useMemo(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 364);
+    start.setDate(start.getDate() - start.getDay()); // align to Sunday
+    const grid: string[][] = [];
+    const cur = new Date(start);
+    const end = new Date();
+    end.setDate(end.getDate() - end.getDay() + 6); // end of current week
+    while (cur <= end) {
+      const week: string[] = [];
+      for (let d = 0; d < 7; d++) {
+        week.push(dateStr(new Date(cur)));
+        cur.setDate(cur.getDate() + 1);
+      }
+      grid.push(week);
+    }
+    return grid;
+  }, []);
+
+  const HABIT_LEVELS = ["bg-muted/50", "bg-violet-900/50", "bg-violet-700/60", "bg-violet-500/70", "bg-violet-400"];
+
+  return (
+    <div className="space-y-5">
+      {/* Habit calendar */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-2">Habit completion · past year</p>
+        <div className="overflow-x-auto">
+          <div className="flex gap-[3px] min-w-max">
+            {weeks.map((week, wi) => (
+              <div key={wi} className="flex flex-col gap-[3px]">
+                {week.map((date) => {
+                  const isFuture = date > today;
+                  const completed = habitMap[date] ?? 0;
+                  const isWorkout = workoutSet.has(date);
+                  let level = 0;
+                  if (!isFuture && totalHabits > 0 && completed > 0) {
+                    const ratio = completed / totalHabits;
+                    level = ratio >= 0.75 ? 4 : ratio >= 0.5 ? 3 : ratio >= 0.25 ? 2 : 1;
+                  }
+                  return (
+                    <div
+                      key={date}
+                      title={`${date}${completed ? ` · ${completed} habits` : ""}${isWorkout ? " · workout 💪" : ""}`}
+                      className={`h-[11px] w-[11px] rounded-[2px] ${isFuture ? "bg-muted/20" : HABIT_LEVELS[level]} ${isWorkout ? "ring-1 ring-emerald-400/70" : ""}`}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 mt-2">
+          <span className="text-[10px] text-muted-foreground">Less</span>
+          {HABIT_LEVELS.map((cls, i) => (
+            <div key={i} className={`h-2.5 w-2.5 rounded-[2px] ${cls}`} />
+          ))}
+          <span className="text-[10px] text-muted-foreground">More</span>
+          <div className="ml-3 h-2.5 w-2.5 rounded-[2px] bg-muted/50 ring-1 ring-emerald-400/70" />
+          <span className="text-[10px] text-muted-foreground">Workout</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsTab({
+  habitLogs, workouts, issues, totalHabits,
+}: {
+  habitLogs: HabitLogDay[];
+  workouts: WorkoutDay[];
+  issues: AllIssue[];
+  totalHabits: number;
+}) {
+  const today = dateStr(new Date());
+
+  const last30 = useMemo(() => {
+    const map = Object.fromEntries(habitLogs.map((l) => [l.date, l.completed]));
+    return Array.from({ length: 30 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (29 - i));
+      const date = dateStr(d);
+      const completed = map[date] ?? 0;
+      return {
+        date: `${d.getMonth() + 1}/${d.getDate()}`,
+        pct: totalHabits > 0 ? Math.round((completed / totalHabits) * 100) : 0,
+      };
+    });
+  }, [habitLogs, totalHabits]);
+
+  const tasksByWeek = useMemo(() => {
+    const done = issues.filter((i) => i.status === "done" && i.completedAt);
+    const map: Record<string, number> = {};
+    done.forEach((i) => {
+      const d = new Date(i.completedAt!);
+      const sun = new Date(d);
+      sun.setDate(d.getDate() - d.getDay());
+      const key = `${sun.getMonth() + 1}/${sun.getDate()}`;
+      map[key] = (map[key] ?? 0) + 1;
+    });
+    return Object.entries(map).slice(-8).map(([week, count]) => ({ week, count }));
+  }, [issues]);
+
+  return (
+    <div className="space-y-8">
+      <ActivityCalendar habitLogs={habitLogs} workouts={workouts} totalHabits={totalHabits} />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-3">Habit completion % · last 30 days</p>
+          {totalHabits === 0 ? (
+            <p className="text-xs text-muted-foreground">No habits tracked yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={130}>
+              <LineChart data={last30}>
+                <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={6} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} unit="%" width={30} />
+                <Tooltip formatter={(v) => [`${v}%`, "Completion"]} />
+                <Line type="monotone" dataKey="pct" stroke="#8b5cf6" dot={false} strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-3">Tasks completed · by week</p>
+          {tasksByWeek.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No completed tasks yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart data={tasksByWeek}>
+                <XAxis dataKey="week" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} width={20} allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#6366f1" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Finance tab ─────────────────────────────────────────────────────────────
+
+function FinanceTab() {
+  return (
+    <div className="rounded-xl border border-dashed border-border p-12 text-center space-y-3">
+      <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/15 mx-auto">
+        <DollarSign className="h-5 w-5 text-amber-400" />
+      </div>
+      <p className="text-sm font-semibold">Finance tracking</p>
+      <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+        Connect accounts, import transactions, and see your net worth — coming in the next phase.
+      </p>
+      <Link href="/finance" className="text-xs text-amber-400 hover:underline">
+        Explore finance →
+      </Link>
+    </div>
+  );
+}
+
+// ─── Today pulse strip ───────────────────────────────────────────────────────
+
+const MOOD_EMOJIS: Record<number, string> = { 2: "😭", 4: "😔", 6: "😐", 8: "😊", 10: "🤩" };
+
+function closestEmoji(map: Record<number, string>, value: number): string {
+  const keys = Object.keys(map).map(Number);
+  const nearest = keys.reduce((a, b) => (Math.abs(b - value) < Math.abs(a - value) ? b : a));
+  return map[nearest];
+}
+
+function TodayStrip({
+  mood, habits, todayDone,
+}: {
+  mood: { moodScore: number; energyScore: number; stressScore: number } | null;
+  habits: Habit[];
+  todayDone: Set<number>;
+}) {
   const done  = habits.filter((h) => todayDone.has(h.id)).length;
   const total = habits.length;
   const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
-    <Link href="/habits" className="group block">
-      <div className="rounded-xl border border-violet-500/20 bg-card p-4 hover:border-violet-500/40 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-violet-500/15 flex items-center justify-center">
-              <Target className="h-3.5 w-3.5 text-violet-400" />
-            </div>
-            <span className="text-sm font-semibold">Habits</span>
-          </div>
-          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-all" />
-        </div>
-
-        {total === 0 ? (
-          <p className="text-sm text-muted-foreground">No habits yet</p>
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-card/50 px-4 py-2.5 text-sm">
+      <Link href="/mood" className="flex items-center gap-2 hover:text-primary transition-colors">
+        <Heart className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+        {mood ? (
+          <span className="text-xs">
+            {closestEmoji(MOOD_EMOJIS, mood.moodScore)} {mood.moodScore}/10
+          </span>
         ) : (
-          <>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">{done}/{total} done</span>
-              <span className="text-xs font-semibold text-violet-400">{pct}%</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-500"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {habits.slice(0, 8).map((h) => (
-                <div
-                  key={h.id}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
-                  style={{ backgroundColor: `${h.color}22`, color: h.color }}
-                >
-                  {todayDone.has(h.id) && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-                  {h.name}
-                </div>
-              ))}
-              {habits.length > 8 && <span className="text-[11px] text-muted-foreground">+{habits.length - 8} more</span>}
-            </div>
-          </>
+          <span className="text-xs text-muted-foreground">Log mood →</span>
         )}
-      </div>
-    </Link>
-  );
-}
-
-// ─── Section: Goals tickets ───────────────────────────────────────────────────
-
-function TicketRow({ issue, color }: { issue: Issue; color: string }) {
-  const cfg = STATUS_CONFIG[issue.status];
-  const Icon = issue.status === "done" ? CheckCircle2 : Circle;
-  return (
-    <div className="flex items-center gap-2 py-1.5">
-      <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: cfg.color }} fill={issue.status === "done" ? cfg.color : "none"} strokeWidth={2} />
-      <span className="text-xs flex-1 truncate">{issue.title}</span>
-      <span
-        className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-        style={{ backgroundColor: `${cfg.color}22`, color: cfg.color }}
-      >
-        {cfg.label}
-      </span>
+      </Link>
+      <div className="h-3 w-px bg-border" />
+      <Link href="/habits" className="flex items-center gap-2 hover:text-primary transition-colors">
+        <Target className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+        <span className="text-xs">
+          {total === 0 ? (
+            <span className="text-muted-foreground">No habits</span>
+          ) : (
+            <>{done}/{total} habits · {pct}%</>
+          )}
+        </span>
+      </Link>
+      <div className="flex-1" />
+      <Link href="/fitness" className="text-xs text-muted-foreground hover:text-emerald-400 transition-colors flex items-center gap-1">
+        <Activity className="h-3.5 w-3.5" /> Fitness
+      </Link>
+      <Link href="/memories" className="text-xs text-muted-foreground hover:text-fuchsia-400 transition-colors flex items-center gap-1">
+        <Camera className="h-3.5 w-3.5" /> Memories
+      </Link>
     </div>
   );
 }
-
-function GoalsWidget({ projects, issues }: { projects: Project[]; issues: Record<number, Issue[]> }) {
-  const active = projects.filter((p) => p.status === "active");
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg bg-sky-500/15 flex items-center justify-center">
-            <Layers className="h-3.5 w-3.5 text-sky-400" />
-          </div>
-          <span className="text-sm font-semibold">Active goals</span>
-        </div>
-        <Link href="/goals" className="text-xs text-sky-400 hover:underline">View all →</Link>
-      </div>
-
-      {active.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-4 text-center">
-          <p className="text-xs text-muted-foreground">No active projects</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {active.map((p) => {
-            const pIssues = issues[p.id] ?? [];
-            const open    = pIssues.filter((i) => STATUS_OPEN.includes(i.status));
-            const done    = pIssues.filter((i) => i.status === "done").length;
-            const total   = pIssues.length;
-            const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
-
-            return (
-              <Link key={p.id} href={`/goals/${p.id}`} className="group block">
-                <div className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-5 w-5 rounded" style={{ backgroundColor: `${p.color}33` }}>
-                        <div className="h-full w-full rounded" style={{ backgroundColor: p.color, opacity: 0.7 }} />
-                      </div>
-                      <span className="text-sm font-semibold truncate">{p.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-muted-foreground">{pct}%</span>
-                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-all" />
-                    </div>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="h-1 rounded-full bg-muted overflow-hidden mb-3">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: p.color }} />
-                  </div>
-
-                  {/* Open tickets */}
-                  {open.length > 0 && (
-                    <div className="divide-y divide-border/50">
-                      {open.slice(0, 3).map((i) => <TicketRow key={i.id} issue={i} color={p.color} />)}
-                      {open.length > 3 && (
-                        <p className="text-[11px] text-muted-foreground pt-1.5">+{open.length - 3} more open</p>
-                      )}
-                    </div>
-                  )}
-                  {open.length === 0 && total > 0 && (
-                    <p className="text-xs text-emerald-400 font-medium">All caught up ✓</p>
-                  )}
-                  {total === 0 && (
-                    <p className="text-xs text-muted-foreground">No issues yet</p>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Domain nav cards (compact) ───────────────────────────────────────────────
-
-const DOMAIN_CARDS = [
-  { href: "/fitness",  label: "Fitness",  icon: Activity,    color: "emerald" },
-  { href: "/finance",  label: "Finance",  icon: DollarSign,  color: "amber"   },
-  { href: "/memories", label: "Memories", icon: Camera,      color: "fuchsia" },
-] as const;
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+type Tab = "board" | "analytics" | "finance";
+
+const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
+  { key: "board",     label: "Board",     icon: LayoutDashboard },
+  { key: "analytics", label: "Analytics", icon: BarChart2       },
+  { key: "finance",   label: "Finance",   icon: Wallet          },
+];
+
 export default function DashboardPage() {
   const today = localToday();
+  const [tab, setTab] = useState<Tab>("board");
 
-  const [mood, setMood]         = useState<{ moodScore: number; energyScore: number; stressScore: number } | null>(null);
-  const [habits, setHabits]     = useState<Habit[]>([]);
-  const [todayDone, setTodayDone] = useState<Set<number>>(new Set());
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [issueMap, setIssueMap] = useState<Record<number, Issue[]>>({});
-  const [loading, setLoading]   = useState(true);
+  const [mood, setMood]             = useState<{ moodScore: number; energyScore: number; stressScore: number } | null>(null);
+  const [habits, setHabits]         = useState<Habit[]>([]);
+  const [todayDone, setTodayDone]   = useState<Set<number>>(new Set());
+  const [allIssues, setAllIssues]   = useState<AllIssue[]>([]);
+  const [habitLogs, setHabitLogs]   = useState<HabitLogDay[]>([]);
+  const [workouts, setWorkouts]     = useState<WorkoutDay[]>([]);
+  const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [moodData, habitsData, projectsData] = await Promise.all([
+      const [moodData, habitsData, issuesData, logsData, workoutsData] = await Promise.all([
         fetch(`/api/mood?date=${today}`).then((r) => r.json()),
         fetch("/api/habits").then((r) => r.json()),
-        fetch("/api/projects").then((r) => r.json()),
+        fetch("/api/issues").then((r) => r.json()),
+        fetch("/api/habits/logs").then((r) => r.json()),
+        fetch("/api/fitness/sessions").then((r) => r.json()),
       ]);
 
       setMood(moodData);
       setHabits(habitsData);
-      setProjects(projectsData);
+      setAllIssues(Array.isArray(issuesData) ? issuesData : []);
+      setHabitLogs(Array.isArray(logsData) ? logsData : []);
+      setWorkouts(Array.isArray(workoutsData) ? workoutsData : []);
 
-      // Load today's habit logs
       const logs = await Promise.all(
         (habitsData as Habit[]).map((h) =>
           fetch(`/api/habits/${h.id}/log`).then((r) => r.json())
         )
       );
-      const flat = logs.flat() as HabitLog[];
+      const flat = logs.flat() as { habitId: number; date: string; completed: boolean }[];
       setTodayDone(new Set(flat.filter((l) => l.date === today && l.completed).map((l) => l.habitId)));
-
-      // Load issues for active projects
-      const active = (projectsData as Project[]).filter((p) => p.status === "active");
-      const issueResults = await Promise.all(
-        active.map((p) => fetch(`/api/projects/${p.id}/issues`).then((r) => r.json()))
-      );
-      const map: Record<number, Issue[]> = {};
-      active.forEach((p, i) => { map[p.id] = issueResults[i]; });
-      setIssueMap(map);
 
       setLoading(false);
     }
     load();
   }, [today]);
 
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
-  const daysLeft = 365 - dayOfYear;
+  const now          = new Date();
+  const startOfYear  = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear    = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
+  const daysLeft     = 365 - dayOfYear;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
 
       {/* Hero */}
       <div className="space-y-3">
@@ -311,50 +417,51 @@ export default function DashboardPage() {
             style={{ width: `${(dayOfYear / 365) * 100}%` }}
           />
         </div>
-        <p className="text-xs text-muted-foreground">Day {dayOfYear} of 365 — {Math.round((dayOfYear / 365) * 100)}% through the year</p>
+        <p className="text-xs text-muted-foreground">
+          Day {dayOfYear} of 365 — {Math.round((dayOfYear / 365) * 100)}% through the year
+        </p>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 rounded-xl bg-muted animate-pulse" />)}
+        <div className="space-y-3">
+          <div className="h-10 rounded-xl bg-muted animate-pulse" />
+          <div className="h-64 rounded-xl bg-muted animate-pulse" />
         </div>
       ) : (
         <>
-          {/* Today's pulse row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <MoodPulse mood={mood} />
-            <HabitsWidget habits={habits} todayDone={todayDone} />
+          {/* Today strip */}
+          <TodayStrip mood={mood} habits={habits} todayDone={todayDone} />
+
+          {/* Tab bar */}
+          <div className="flex gap-1 border-b border-border">
+            {TABS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  tab === key
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Goals tickets */}
-          <GoalsWidget projects={projects} issues={issueMap} />
-
-          {/* Other domains */}
+          {/* Tab content */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">More</p>
-            <div className="grid grid-cols-3 gap-3">
-              {DOMAIN_CARDS.map(({ href, label, icon: Icon, color }) => (
-                <Link key={href} href={href} className="group">
-                  <div className={`rounded-xl border border-${color}-500/20 bg-card p-4 hover:border-${color}-500/40 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 text-center`}>
-                    <div className={`inline-flex items-center justify-center h-9 w-9 rounded-lg bg-${color}-500/15 mb-2`}>
-                      <Icon className={`h-4 w-4 text-${color}-400`} />
-                    </div>
-                    <p className="text-sm font-semibold">{label}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Lookback */}
-          <div className="rounded-xl border border-dashed border-border p-5 flex items-center gap-4">
-            <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">Lookback · coming soon</p>
-              <p className="text-xs text-muted-foreground">On this day last year — mood, workouts, where you were, what you spent</p>
-            </div>
+            {tab === "board" && <BoardTab issues={allIssues} />}
+            {tab === "analytics" && (
+              <AnalyticsTab
+                habitLogs={habitLogs}
+                workouts={workouts}
+                issues={allIssues}
+                totalHabits={habits.length}
+              />
+            )}
+            {tab === "finance" && <FinanceTab />}
           </div>
         </>
       )}
