@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Check, Plus, Flame, X } from "lucide-react";
+import { Check, Plus, Flame, X, Trash2 } from "lucide-react";
 
-// Local date — avoids UTC offset giving "tomorrow" for UTC- timezones at night
 function localToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -20,7 +19,7 @@ function dateMinusDays(dateStr: string, days: number): string {
 
 const today = localToday();
 
-type Habit = { id: number; name: string; color: string; frequency: string };
+type Habit = { id: number; name: string; color: string; frequency: string; targetDaysPerWeek: number };
 type HabitLog = { habitId: number; date: string; completed: boolean };
 
 const COLORS = [
@@ -33,12 +32,20 @@ const COLORS = [
   { value: "#06b6d4", label: "Cyan"    },
 ];
 
+const FREQ_OPTIONS = [
+  { value: "daily",   label: "Every day",       days: 7  },
+  { value: "6x",      label: "6× per week",     days: 6  },
+  { value: "5x",      label: "5× per week",     days: 5  },
+  { value: "4x",      label: "4× per week",     days: 4  },
+  { value: "3x",      label: "3× per week",     days: 3  },
+  { value: "2x",      label: "2× per week",     days: 2  },
+  { value: "weekly",  label: "Once a week",      days: 1  },
+];
+
 function computeStreak(logs: HabitLog[], habitId: number): number {
   const done = new Set(
     logs.filter((l) => l.habitId === habitId && l.completed).map((l) => l.date)
   );
-  // If today is logged, start from today. If not, start from yesterday —
-  // so a streak built over N days doesn't show 0 just because today isn't done yet.
   const startDate = done.has(today) ? today : dateMinusDays(today, 1);
   let streak = 0;
   let cursor = startDate;
@@ -50,12 +57,14 @@ function computeStreak(logs: HabitLog[], habitId: number): number {
 }
 
 export default function HabitsPage() {
-  const [habits, setHabits]       = useState<Habit[]>([]);
-  const [logs, setLogs]           = useState<HabitLog[]>([]);
-  const [showForm, setShowForm]   = useState(false);
-  const [newName, setNewName]     = useState("");
-  const [color, setColor]         = useState(COLORS[0].value);
-  const [loading, setLoading]     = useState(true);
+  const [habits, setHabits]     = useState<Habit[]>([]);
+  const [logs, setLogs]         = useState<HabitLog[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [newName, setNewName]   = useState("");
+  const [color, setColor]       = useState(COLORS[0].value);
+  const [freqKey, setFreqKey]   = useState("daily");
+  const [loading, setLoading]   = useState(true);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/habits")
@@ -89,19 +98,33 @@ export default function HabitsPage() {
   async function addHabit(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
+    const freq = FREQ_OPTIONS.find((f) => f.value === freqKey)!;
     const res = await fetch("/api/habits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), color }),
+      body: JSON.stringify({
+        name: newName.trim(),
+        color,
+        frequency: freqKey === "daily" || freqKey === "weekly" ? freqKey : "weekly",
+        targetDaysPerWeek: freq.days,
+      }),
     });
     const habit = await res.json();
     setHabits((prev) => [...prev, habit]);
     setNewName("");
+    setFreqKey("daily");
     setShowForm(false);
   }
 
+  async function deleteHabit(habitId: number) {
+    setDeleting(habitId);
+    await fetch(`/api/habits/${habitId}`, { method: "DELETE" });
+    setHabits((prev) => prev.filter((h) => h.id !== habitId));
+    setDeleting(null);
+  }
+
   const doneCount = habits.filter((h) => todayDone.has(h.id)).length;
-  const progress = habits.length > 0 ? (doneCount / habits.length) * 100 : 0;
+  const progress  = habits.length > 0 ? (doneCount / habits.length) * 100 : 0;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8 space-y-6">
@@ -115,7 +138,7 @@ export default function HabitsPage() {
           </p>
         </div>
         <Button size="sm" onClick={() => setShowForm((s) => !s)} variant={showForm ? "secondary" : "default"}>
-          {showForm ? <><X className="h-4 w-4 mr-1" /> Cancel</> : <><Plus className="h-4 w-4 mr-1" /> Add</>}
+          {showForm ? <><X className="h-4 w-4 mr-1" />Cancel</> : <><Plus className="h-4 w-4 mr-1" />Add</>}
         </Button>
       </div>
 
@@ -142,6 +165,29 @@ export default function HabitsPage() {
             onChange={(e) => setNewName(e.target.value)}
             autoFocus
           />
+
+          {/* Frequency */}
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">Frequency</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {FREQ_OPTIONS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => setFreqKey(f.value)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    freqKey === f.value
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Color */}
           <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground">Color</p>
             <div className="flex gap-2 flex-wrap">
@@ -150,7 +196,7 @@ export default function HabitsPage() {
                   key={c.value}
                   type="button"
                   onClick={() => setColor(c.value)}
-                  className="h-7 w-7 rounded-full transition-all duration-150 ring-offset-background"
+                  className="h-7 w-7 rounded-full transition-all duration-150"
                   style={{
                     backgroundColor: c.value,
                     transform: color === c.value ? "scale(1.2)" : "scale(1)",
@@ -161,6 +207,7 @@ export default function HabitsPage() {
               ))}
             </div>
           </div>
+
           <Button type="submit" size="sm" className="w-full">Save habit</Button>
         </form>
       )}
@@ -168,9 +215,7 @@ export default function HabitsPage() {
       {/* Habit list */}
       {loading ? (
         <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />
-          ))}
+          {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}
         </div>
       ) : habits.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-10 text-center">
@@ -182,42 +227,52 @@ export default function HabitsPage() {
           {habits.map((habit) => {
             const done   = todayDone.has(habit.id);
             const streak = computeStreak(logs, habit.id);
+            const freqLabel = FREQ_OPTIONS.find((f) => f.days === habit.targetDaysPerWeek)?.label ?? "Daily";
             return (
-              <button
+              <div
                 key={habit.id}
-                onClick={() => toggle(habit.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-all duration-200 ${
-                  done
-                    ? "bg-card/50 border-border/50 opacity-70"
-                    : "bg-card border-border hover:border-primary/30 hover:shadow-sm"
+                className={`group flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all duration-200 ${
+                  done ? "bg-card/50 border-border/50 opacity-70" : "bg-card border-border hover:border-primary/30 hover:shadow-sm"
                 }`}
               >
-                {/* Color dot / check */}
-                <div
-                  className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-200`}
+                {/* Check button */}
+                <button
+                  onClick={() => toggle(habit.id)}
+                  className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-200"
                   style={{
                     backgroundColor: done ? habit.color : `${habit.color}22`,
                     border: `2px solid ${habit.color}`,
                   }}
                 >
                   {done && <Check className="h-4 w-4 text-white" strokeWidth={3} />}
+                </button>
+
+                {/* Name + freq */}
+                <div className="flex-1 min-w-0" onClick={() => toggle(habit.id)}>
+                  <p className={`text-sm font-medium truncate ${done ? "line-through text-muted-foreground" : ""}`}>
+                    {habit.name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{freqLabel}</p>
                 </div>
 
-                <span className={`flex-1 text-sm font-medium ${done ? "line-through text-muted-foreground" : ""}`}>
-                  {habit.name}
-                </span>
-
+                {/* Streak */}
                 {streak > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="gap-1 text-xs shrink-0"
-                    style={{ color: habit.color }}
-                  >
+                  <Badge variant="secondary" className="gap-1 text-xs shrink-0" style={{ color: habit.color }}>
                     <Flame className="h-3 w-3" />
                     {streak}
                   </Badge>
                 )}
-              </button>
+
+                {/* Delete — visible on hover */}
+                <button
+                  onClick={() => deleteHabit(habit.id)}
+                  disabled={deleting === habit.id}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 shrink-0"
+                  aria-label="Delete habit"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             );
           })}
         </div>
