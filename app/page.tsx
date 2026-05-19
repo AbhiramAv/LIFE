@@ -6,8 +6,8 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  Heart, Target, Activity, DollarSign, Camera, Layers,
-  BarChart2, CalendarDays, LayoutDashboard, ChevronDown, X, Plus,
+  Heart, Target, Activity, DollarSign,
+  BarChart2, LayoutDashboard, ChevronDown, X, Plus,
 } from "lucide-react";
 import { type IssueStatus } from "@/lib/types/goals";
 
@@ -91,14 +91,13 @@ function HoverCard({ color, children, className = "", onClick }: {
 
 // ─── Glance grid ─────────────────────────────────────────────────────────────
 
-function GlanceGrid({ mood, doneToday, totalHabits, workouts, allIssues }: {
+function GlanceGrid({ mood, doneToday, totalHabits, workouts }: {
   mood: { moodScore: number } | null;
   doneToday: number; totalHabits: number;
-  workouts: WorkoutDay[]; allIssues: AnyIssue[];
+  workouts: WorkoutDay[];
 }) {
   const today = localToday();
   const workedOut = workouts.some((w) => w.date === today);
-  const completedTickets = allIssues.filter((i) => i.status === "done").length;
 
   const cards = [
     {
@@ -119,19 +118,6 @@ function GlanceGrid({ mood, doneToday, totalHabits, workouts, allIssues }: {
     {
       href: "/finance", label: "Finance", icon: DollarSign, color: "#f59e0b",
       value: "→", sub: "view finances",
-    },
-    {
-      href: "/goals", label: "Goals", icon: Layers, color: "#0ea5e9",
-      value: completedTickets > 0 ? `${completedTickets}` : "→",
-      sub: completedTickets > 0 ? "tickets completed" : "view goals",
-    },
-    {
-      href: "/calendar", label: "Calendar", icon: CalendarDays, color: "#6366f1",
-      value: "→", sub: "upcoming events",
-    },
-    {
-      href: "/memories", label: "Memories", icon: Camera, color: "#d946ef",
-      value: "→", sub: "view memories",
     },
   ] as const;
 
@@ -800,7 +786,7 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Glance grid — replaces both the strip and the bottom tiles */}
-            <GlanceGrid mood={mood} doneToday={doneToday} totalHabits={habits.length} workouts={workouts} allIssues={allIssues}/>
+            <GlanceGrid mood={mood} doneToday={doneToday} totalHabits={habits.length} workouts={workouts}/>
 
             {/* Board */}
             <CollapsibleSection id="board" title="Board" icon={<LayoutDashboard className="h-4 w-4 text-violet-400"/>}>
