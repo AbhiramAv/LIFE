@@ -3,18 +3,12 @@ import { db, habits, habitLogs } from "@/lib/db";
 import { eq, and, desc } from "drizzle-orm";
 
 export async function GET() {
-  try {
-    const allHabits = await db
-      .select()
-      .from(habits)
-      .where(eq(habits.archived, false))
-      .orderBy(habits.createdAt);
-    return NextResponse.json(allHabits);
-  } catch (e: unknown) {
-    const err = e as { message?: string; code?: string; detail?: string; cause?: unknown };
-    console.error("DB error:", JSON.stringify({ message: err.message, code: err.code, detail: err.detail, cause: String(err.cause) }));
-    return NextResponse.json({ error: err.message, code: err.code, detail: err.detail }, { status: 500 });
-  }
+  const allHabits = await db
+    .select()
+    .from(habits)
+    .where(eq(habits.archived, false))
+    .orderBy(habits.createdAt);
+  return NextResponse.json(allHabits);
 }
 
 export async function POST(req: NextRequest) {
