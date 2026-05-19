@@ -394,11 +394,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
 
 // ─── Board ────────────────────────────────────────────────────────────────────
 
-const STATUS_CYCLE: Record<string,string> = {
-  backlog:"in_progress", todo:"in_progress",
-  in_progress:"done", in_review:"done",
-  done:"todo", cancelled:"todo", skipped:"todo",
-};
 const DONE_STATUSES = ["done","cancelled","skipped"];
 const STATUS_TAG: Record<string,{label:string;color:string}> = {
   done:{label:"done",color:"#10b981"}, cancelled:{label:"cancelled",color:"#f43f5e"},
@@ -406,13 +401,11 @@ const STATUS_TAG: Record<string,{label:string;color:string}> = {
 };
 type DragInfo = { type: "issue"|"habit"; id: number };
 
-function IssueCard({ issue, onRequestDone, onStatusChange, onDragStart, onDragEnd }: {
-  issue: AnyIssue; onRequestDone:(id:number)=>void; onStatusChange:(id:number,s:string)=>void;
-  onDragStart:()=>void; onDragEnd:()=>void;
+function IssueCard({ issue, onDragStart, onDragEnd }: {
+  issue: AnyIssue; onDragStart:()=>void; onDragEnd:()=>void;
 }) {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
-  const next = STATUS_CYCLE[issue.status] ?? "todo";
   const C = issue.projectColor;
   const [hov, setHov] = useState(false);
 
@@ -435,22 +428,8 @@ function IssueCard({ issue, onRequestDone, onStatusChange, onDragStart, onDragEn
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full truncate max-w-[110px]"
           style={{backgroundColor:`${C}20`,color:C}}>{issue.projectTitle}</span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {tag && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-            style={{backgroundColor:`${tag.color}20`,color:tag.color}}>{tag.label}</span>}
-          {!isDone && (
-            <button onClick={()=> next==="done" ? onRequestDone(issue.id) : onStatusChange(issue.id,next)}
-              className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all">
-              → {next==="in_progress" ? "Start" : "Done"}
-            </button>
-          )}
-          {isDone && (
-            <button onClick={()=>onStatusChange(issue.id,"todo")}
-              className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-all">
-              Reopen
-            </button>
-          )}
-        </div>
+        {tag && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+          style={{backgroundColor:`${tag.color}20`,color:tag.color}}>{tag.label}</span>}
       </div>
     </div>
   );
@@ -492,13 +471,7 @@ function HabitCard({ habit, weekDone, alreadyDoneToday, onRequestDone, onDragSta
           ) : alreadyDoneToday ? (
             <span className="text-[10px] text-muted-foreground">✓ today · {remaining}× left</span>
           ) : (
-            <>
-              <span className="text-[10px] text-muted-foreground">{remaining}× left</span>
-              <button onClick={onRequestDone}
-                className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all">
-                Done today
-              </button>
-            </>
+            <span className="text-[10px] text-muted-foreground">{remaining}× left</span>
           )}
         </div>
       </div>
@@ -547,8 +520,6 @@ function KanbanColumn({ title, color, columnKey, cards, weekCounts, todayLogs, o
         {cards.map(card => {
           if (card.kind==="issue") return (
             <IssueCard key={`i-${card.issue.id}`} issue={card.issue}
-              onRequestDone={id=>onRequestDone({type:"issue",id})}
-              onStatusChange={onStatusChange}
               onDragStart={()=>setDragging({type:"issue",id:card.issue.id})}
               onDragEnd={()=>setDragging(null)}
             />

@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Nav } from "@/components/nav";
-import { RouteAccentBar } from "@/components/route-accent";
-import { ThemeProvider } from "@/components/theme-provider";
+import { Nav } from "@/components/layout/nav";
+import { RouteAccentBar } from "@/components/layout/route-accent";
+import { ThemeProvider } from "@/components/layout/theme-provider";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });

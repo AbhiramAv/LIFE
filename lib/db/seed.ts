@@ -1,6 +1,6 @@
 import { db } from "./adapters/postgres";
 import { exercises } from "./schema";
-import { EXERCISES } from "../../data/exercises";
+import { EXERCISES } from "../data/exercises";
 
 async function seed() {
   console.log("Seeding exercises...");
