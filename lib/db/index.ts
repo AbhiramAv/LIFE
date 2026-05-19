@@ -1,2 +1,2 @@
-export { db } from "./adapters/neon";
+export { db } from "./adapters/postgres";
 export * from "./schema";
