@@ -1,2 +1,2 @@
-export { db } from "./adapters/sqlite";
+export { db } from "./adapters/neon";
 export * from "./schema";

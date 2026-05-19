@@ -1,166 +1,140 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, real, boolean, serial, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // ─── Fitness ─────────────────────────────────────────────────────────────────
 
-export const exercises = sqliteTable("exercises", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const exercises = pgTable("exercises", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  category: text("category", {
-    enum: ["push", "pull", "legs", "core", "cardio", "other"],
-  }).notNull(),
+  category: text("category").notNull(), // push|pull|legs|core|cardio|other
   muscleGroups: text("muscle_groups").notNull(), // JSON string: string[]
-  secondaryMuscles: text("secondary_muscles").notNull().default("[]"), // JSON string: string[]
-  isCustom: integer("is_custom", { mode: "boolean" }).notNull().default(false),
+  secondaryMuscles: text("secondary_muscles").notNull().default("[]"),
+  isCustom: boolean("is_custom").notNull().default(false),
 });
 
-export const workoutSessions = sqliteTable("workout_sessions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  date: text("date").notNull(), // ISO date string YYYY-MM-DD
+export const workoutSessions = pgTable("workout_sessions", {
+  id: serial("id").primaryKey(),
+  date: text("date").notNull(), // YYYY-MM-DD
   notes: text("notes"),
   durationMins: integer("duration_mins"),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
-export const workoutSets = sqliteTable("workout_sets", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  sessionId: integer("session_id")
-    .notNull()
-    .references(() => workoutSessions.id, { onDelete: "cascade" }),
-  exerciseId: integer("exercise_id")
-    .notNull()
-    .references(() => exercises.id),
+export const workoutSets = pgTable("workout_sets", {
+  id: serial("id").primaryKey(),
+  sessionId: integer("session_id").notNull().references(() => workoutSessions.id, { onDelete: "cascade" }),
+  exerciseId: integer("exercise_id").notNull().references(() => exercises.id),
   setNumber: integer("set_number").notNull(),
   reps: integer("reps").notNull(),
   weightKg: real("weight_kg").notNull(),
-  rpe: integer("rpe"), // 1-10, optional perceived exertion
+  rpe: integer("rpe"),
 });
 
 // ─── Finance ──────────────────────────────────────────────────────────────────
 
-export const accounts = sqliteTable("accounts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const accounts = pgTable("accounts", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type", {
-    enum: ["checking", "savings", "credit", "investment"],
-  }).notNull(),
+  type: text("type").notNull(), // checking|savings|credit|investment
   currency: text("currency").notNull().default("USD"),
 });
 
-export const transactionCategories = sqliteTable("transaction_categories", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const transactionCategories = pgTable("transaction_categories", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   parentCategory: text("parent_category"),
-  type: text("type", { enum: ["income", "expense"] }).notNull(),
+  type: text("type").notNull(), // income|expense
 });
 
-export const transactions = sqliteTable("transactions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const transactions = pgTable("transactions", {
+  id: serial("id").primaryKey(),
   accountId: integer("account_id").references(() => accounts.id),
-  date: text("date").notNull(), // YYYY-MM-DD
-  amount: real("amount").notNull(), // positive = income, negative = expense
+  date: text("date").notNull(),
+  amount: real("amount").notNull(),
   category: text("category"),
   description: text("description").notNull(),
-  rawDescription: text("raw_description"), // original bank description
-  type: text("type", { enum: ["income", "expense"] }).notNull(),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  rawDescription: text("raw_description"),
+  type: text("type").notNull(), // income|expense
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
 // ─── Mood & Mental Health ─────────────────────────────────────────────────────
 
-export const dailyEntries = sqliteTable("daily_entries", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  date: text("date").notNull().unique(), // YYYY-MM-DD, one per day
-  moodScore: integer("mood_score").notNull(), // 1-10
-  energyScore: integer("energy_score").notNull(), // 1-10
-  stressScore: integer("stress_score").notNull(), // 1-10
+export const dailyEntries = pgTable("daily_entries", {
+  id: serial("id").primaryKey(),
+  date: text("date").notNull().unique(),
+  moodScore: integer("mood_score").notNull(),
+  energyScore: integer("energy_score").notNull(),
+  stressScore: integer("stress_score").notNull(),
   notes: text("notes"),
   gratitude: text("gratitude"),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+  updatedAt: text("updated_at").notNull().default(sql`now()`),
 });
 
-// ─── Habits & Goals ───────────────────────────────────────────────────────────
+// ─── Habits ───────────────────────────────────────────────────────────────────
 
-export const habits = sqliteTable("habits", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const habits = pgTable("habits", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  frequency: text("frequency", { enum: ["daily", "weekly"] })
-    .notNull()
-    .default("daily"),
+  frequency: text("frequency").notNull().default("daily"), // daily|weekly
   targetDaysPerWeek: integer("target_days_per_week").notNull().default(7),
-  color: text("color").notNull().default("#6366f1"), // hex color
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  color: text("color").notNull().default("#6366f1"),
+  archived: boolean("archived").notNull().default(false),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
-export const habitLogs = sqliteTable("habit_logs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  habitId: integer("habit_id")
-    .notNull()
-    .references(() => habits.id, { onDelete: "cascade" }),
-  date: text("date").notNull(), // YYYY-MM-DD
-  completed: integer("completed", { mode: "boolean" }).notNull().default(true),
+export const habitLogs = pgTable("habit_logs", {
+  id: serial("id").primaryKey(),
+  habitId: integer("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  completed: boolean("completed").notNull().default(true),
   notes: text("notes"),
 });
 
-export const goals = sqliteTable("goals", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const goals = pgTable("goals", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
-  targetDate: text("target_date"), // YYYY-MM-DD
-  status: text("status", { enum: ["active", "completed", "paused"] })
-    .notNull()
-    .default("active"),
+  targetDate: text("target_date"),
+  status: text("status").notNull().default("active"), // active|completed|paused
   category: text("category"),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
-export const goalMilestones = sqliteTable("goal_milestones", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  goalId: integer("goal_id")
-    .notNull()
-    .references(() => goals.id, { onDelete: "cascade" }),
+export const goalMilestones = pgTable("goal_milestones", {
+  id: serial("id").primaryKey(),
+  goalId: integer("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  completed: integer("completed", { mode: "boolean" }).notNull().default(false),
+  completed: boolean("completed").notNull().default(false),
   completedAt: text("completed_at"),
 });
 
 // ─── Projects & Issues (ticketing system) ─────────────────────────────────────
 
-export const projects = sqliteTable("projects", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const projects = pgTable("projects", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
-  category: text("category", {
-    enum: ["project", "certification", "career", "personal"],
-  }).notNull().default("project"),
+  category: text("category").notNull().default("project"), // project|certification|career|personal
   color: text("color").notNull().default("#8b5cf6"),
-  status: text("status", {
-    enum: ["active", "paused", "completed", "archived"],
-  }).notNull().default("active"),
-  targetDate: text("target_date"), // YYYY-MM-DD
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  status: text("status").notNull().default("active"), // active|paused|completed|archived
+  targetDate: text("target_date"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+  updatedAt: text("updated_at").notNull().default(sql`now()`),
 });
 
-export const issues = sqliteTable("issues", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  projectId: integer("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
+export const issues = pgTable("issues", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
-  status: text("status", {
-    enum: ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
-  }).notNull().default("todo"),
-  priority: text("priority", {
-    enum: ["urgent", "high", "medium", "low", "none"],
-  }).notNull().default("none"),
-  label: text("label"),   // free-text tag e.g. "bug", "feature", "study"
-  dueDate: text("due_date"), // YYYY-MM-DD
+  status: text("status").notNull().default("todo"), // backlog|todo|in_progress|in_review|done|cancelled
+  priority: text("priority").notNull().default("none"), // urgent|high|medium|low|none
+  label: text("label"),
+  dueDate: text("due_date"),
   sortOrder: integer("sort_order").notNull().default(0),
   completedAt: text("completed_at"),
-  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
-  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+  updatedAt: text("updated_at").notNull().default(sql`now()`),
 });
