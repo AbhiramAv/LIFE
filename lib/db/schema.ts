@@ -125,3 +125,42 @@ export const goalMilestones = sqliteTable("goal_milestones", {
   completed: integer("completed", { mode: "boolean" }).notNull().default(false),
   completedAt: text("completed_at"),
 });
+
+// ─── Projects & Issues (ticketing system) ─────────────────────────────────────
+
+export const projects = sqliteTable("projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category", {
+    enum: ["project", "certification", "career", "personal"],
+  }).notNull().default("project"),
+  color: text("color").notNull().default("#8b5cf6"),
+  status: text("status", {
+    enum: ["active", "paused", "completed", "archived"],
+  }).notNull().default("active"),
+  targetDate: text("target_date"), // YYYY-MM-DD
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
+
+export const issues = sqliteTable("issues", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status", {
+    enum: ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"],
+  }).notNull().default("todo"),
+  priority: text("priority", {
+    enum: ["urgent", "high", "medium", "low", "none"],
+  }).notNull().default("none"),
+  label: text("label"),   // free-text tag e.g. "bug", "feature", "study"
+  dueDate: text("due_date"), // YYYY-MM-DD
+  sortOrder: integer("sort_order").notNull().default(0),
+  completedAt: text("completed_at"),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
