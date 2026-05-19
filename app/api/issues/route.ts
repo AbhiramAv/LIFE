@@ -6,9 +6,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const sprintOnly = searchParams.get("sprint") === "true";
 
+  const allStatuses = searchParams.get("all") === "true";
   const condition = sprintOnly
     ? and(ne(issues.status, "cancelled"), eq(issues.inSprint, true))
-    : ne(issues.status, "cancelled");
+    : allStatuses ? undefined : ne(issues.status, "cancelled");
 
   const rows = await db
     .select({

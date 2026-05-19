@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import {
   Heart, Target, Activity, DollarSign, Camera, ArrowRight,
@@ -23,6 +23,7 @@ type WorkoutDay   = { date: string };
 type Habit        = { id: number; name: string; biggerGoal: string | null; color: string; targetDaysPerWeek: number };
 type HabitLog     = { habitId: number; date: string; completed: boolean; logStatus: string };
 type WeekCount    = { habitId: number; doneThisWeek: number };
+type PendingDone  = { type: "issue" | "habit"; id: number };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -48,10 +49,57 @@ function closestEmoji(value: number): string {
   return MOOD_EMOJIS[keys.reduce((a, b) => Math.abs(b - value) < Math.abs(a - value) ? b : a)];
 }
 
+// Deterministic color per bigger goal string
+const GOAL_PALETTE = ["#f43f5e","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#a855f7","#ec4899","#14b8a6","#84cc16"];
+function biggerGoalColor(goal: string | null, fallback: string): string {
+  if (!goal) return fallback;
+  let h = 0;
+  for (const c of goal) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return GOAL_PALETTE[h % GOAL_PALETTE.length];
+}
+
+// ─── Done confirmation modal ──────────────────────────────────────────────────
+
+function DoneModal({ pending, onConfirm, onCancel }: {
+  pending: PendingDone;
+  onConfirm: (choice: "completed" | "cancelled") => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-background border border-border rounded-xl p-5 shadow-xl space-y-3 w-60">
+        <p className="text-sm font-semibold text-center">
+          {pending.type === "habit" ? "How'd it go?" : "Mark ticket as…"}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onConfirm("completed")}
+            className="flex-1 text-xs font-medium py-2 rounded-lg border transition-colors"
+            style={{ backgroundColor: "#10b98115", color: "#10b981", borderColor: "#10b98130" }}
+          >
+            ✓ {pending.type === "habit" ? "Done" : "Completed"}
+          </button>
+          <button
+            onClick={() => onConfirm("cancelled")}
+            className="flex-1 text-xs font-medium py-2 rounded-lg border transition-colors"
+            style={{ backgroundColor: "#f43f5e15", color: "#f43f5e", borderColor: "#f43f5e30" }}
+          >
+            ✕ {pending.type === "habit" ? "Skipped" : "Cancelled"}
+          </button>
+        </div>
+        <button onClick={onCancel} className="w-full text-xs text-muted-foreground hover:text-foreground text-center">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Collapsible section ──────────────────────────────────────────────────────
 
-function CollapsibleSection({ id, title, icon, children, badge }: {
-  id: string; title: string; icon: React.ReactNode; children: React.ReactNode; badge?: React.ReactNode;
+function CollapsibleSection({ id, title, icon, children }: {
+  id: string; title: string; icon: React.ReactNode; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(true);
   useEffect(() => {
@@ -60,26 +108,17 @@ function CollapsibleSection({ id, title, icon, children, badge }: {
   }, [id]);
 
   function toggle() {
-    setOpen((o) => {
-      localStorage.setItem(`section-${id}`, String(!o));
-      return !o;
-    });
+    setOpen((o) => { localStorage.setItem(`section-${id}`, String(!o)); return !o; });
   }
 
   return (
     <div className="space-y-3">
-      <button
-        onClick={toggle}
-        className="flex items-center gap-2 w-full group"
-      >
+      <button onClick={toggle} className="flex items-center gap-2 w-full group">
         {icon}
         <span className="text-sm font-semibold">{title}</span>
-        {badge}
         <span className="ml-auto flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground">{open ? "collapse" : "expand"}</span>
-          <ChevronDown
-            className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-0" : "-rotate-90"}`}
-          />
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
       </button>
       {open && children}
@@ -90,10 +129,8 @@ function CollapsibleSection({ id, title, icon, children, badge }: {
 // ─── Sprint Drawer ────────────────────────────────────────────────────────────
 
 function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
-  open: boolean;
-  onClose: () => void;
-  sprintIds: Set<number>;
-  onToggle: (id: number, inSprint: boolean) => void;
+  open: boolean; onClose: () => void;
+  sprintIds: Set<number>; onToggle: (id: number, inSprint: boolean) => void;
 }) {
   const [allIssues, setAllIssues] = useState<AnyIssue[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,13 +146,10 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
   }, [open, allIssues]);
 
   const backlog = useMemo(
-    () => allIssues?.filter((i) => !sprintIds.has(i.id) && !["done", "cancelled", "skipped"].includes(i.status)) ?? [],
+    () => allIssues?.filter((i) => !sprintIds.has(i.id) && !["done","cancelled","skipped"].includes(i.status)) ?? [],
     [allIssues, sprintIds]
   );
-  const inSprint = useMemo(
-    () => allIssues?.filter((i) => sprintIds.has(i.id)) ?? [],
-    [allIssues, sprintIds]
-  );
+  const inSprint = useMemo(() => allIssues?.filter((i) => sprintIds.has(i.id)) ?? [], [allIssues, sprintIds]);
 
   const byProject = useMemo(() => {
     const g: Record<string, { color: string; issues: AnyIssue[] }> = {};
@@ -127,7 +161,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
   }, [backlog]);
 
   if (!open) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -135,32 +168,26 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="font-semibold text-sm">Plan this week</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{inSprint.length} issues in sprint</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{inSprint.length} tickets in sprint</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
-
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 border-r border-border space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Backlog</p>
             {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
             {!loading && Object.keys(byProject).length === 0 && (
-              <p className="text-xs text-muted-foreground italic">All issues are in the sprint.</p>
+              <p className="text-xs text-muted-foreground italic">All tickets are in the sprint.</p>
             )}
-            {Object.entries(byProject).map(([projectTitle, { color, issues }]) => (
-              <div key={projectTitle} className="space-y-1">
+            {Object.entries(byProject).map(([proj, { color, issues }]) => (
+              <div key={proj} className="space-y-1">
                 <div className="flex items-center gap-1.5">
                   <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                  <p className="text-[10px] font-semibold text-muted-foreground truncate">{projectTitle}</p>
+                  <p className="text-[10px] font-semibold text-muted-foreground truncate">{proj}</p>
                 </div>
                 {issues.map((issue) => (
-                  <button
-                    key={issue.id}
-                    onClick={() => onToggle(issue.id, true)}
-                    className="group w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 transition-colors"
-                  >
+                  <button key={issue.id} onClick={() => onToggle(issue.id, true)}
+                    className="group w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted flex items-center gap-2 transition-colors">
                     <span className="flex-1 truncate">{issue.title}</span>
                     <Plus className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0" />
                   </button>
@@ -168,24 +195,15 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
               </div>
             ))}
           </div>
-
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">This week</p>
-            {inSprint.length === 0 && (
-              <p className="text-xs text-muted-foreground italic">← Click items to add to sprint</p>
-            )}
+            {inSprint.length === 0 && <p className="text-xs text-muted-foreground italic">← Click tickets to add</p>}
             {inSprint.map((issue) => (
-              <div
-                key={issue.id}
-                className="flex items-start gap-2 px-2.5 py-2 rounded-lg text-xs border"
-                style={{ borderColor: `${issue.projectColor}40`, backgroundColor: `${issue.projectColor}10` }}
-              >
+              <div key={issue.id} className="flex items-start gap-2 px-2.5 py-2 rounded-lg text-xs border"
+                style={{ borderColor: `${issue.projectColor}40`, backgroundColor: `${issue.projectColor}10` }}>
                 <div className="h-2 w-2 rounded-full mt-1 shrink-0" style={{ backgroundColor: issue.projectColor }} />
                 <span className="flex-1 leading-snug">{issue.title}</span>
-                <button
-                  onClick={() => onToggle(issue.id, false)}
-                  className="text-muted-foreground hover:text-rose-400 transition-colors shrink-0 mt-0.5"
-                >
+                <button onClick={() => onToggle(issue.id, false)} className="text-muted-foreground hover:text-rose-400 transition-colors shrink-0 mt-0.5">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -204,12 +222,11 @@ const STATUS_CYCLE: Record<string, string> = {
   in_progress: "done", in_review: "done",
   done: "todo", cancelled: "todo", skipped: "todo",
 };
-
 const DONE_STATUSES = ["done", "cancelled", "skipped"];
 
 const STATUS_TAG: Record<string, { label: string; color: string }> = {
   done:      { label: "done",      color: "#10b981" },
-  cancelled: { label: "cancelled", color: "#6b7280" },
+  cancelled: { label: "cancelled", color: "#f43f5e" },
   skipped:   { label: "skipped",   color: "#f59e0b" },
   completed: { label: "done",      color: "#10b981" },
   missed:    { label: "missed",    color: "#6b7280" },
@@ -217,8 +234,9 @@ const STATUS_TAG: Record<string, { label: string; color: string }> = {
 
 type DragInfo = { type: "issue" | "habit"; id: number };
 
-function IssueCard({ issue, onStatusChange, onDragStart, onDragEnd }: {
+function IssueCard({ issue, onRequestDone, onStatusChange, onDragStart, onDragEnd }: {
   issue: AnyIssue;
+  onRequestDone: (id: number) => void;
   onStatusChange: (id: number, status: string) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -226,12 +244,10 @@ function IssueCard({ issue, onStatusChange, onDragStart, onDragEnd }: {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
   const nextStatus = STATUS_CYCLE[issue.status] ?? "todo";
+  const goingToDone = nextStatus === "done";
 
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing select-none"
       style={{ borderColor: `${issue.projectColor}30`, borderLeftWidth: 3, borderLeftColor: issue.projectColor }}
     >
@@ -239,31 +255,26 @@ function IssueCard({ issue, onStatusChange, onDragStart, onDragEnd }: {
         {issue.title}
       </p>
       <div className="flex items-center justify-between gap-2">
-        <span
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full truncate max-w-[110px]"
-          style={{ backgroundColor: `${issue.projectColor}20`, color: issue.projectColor }}
-        >
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full truncate max-w-[110px]"
+          style={{ backgroundColor: `${issue.projectColor}20`, color: issue.projectColor }}>
           {issue.projectTitle}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {tag && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${tag.color}20`, color: tag.color }}>
-              {tag.label}
-            </span>
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+              style={{ backgroundColor: `${tag.color}20`, color: tag.color }}>{tag.label}</span>
           )}
           {!isDone && (
             <button
-              onClick={() => onStatusChange(issue.id, nextStatus)}
+              onClick={() => goingToDone ? onRequestDone(issue.id) : onStatusChange(issue.id, nextStatus)}
               className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all"
             >
               → {nextStatus === "in_progress" ? "Start" : "Done"}
             </button>
           )}
           {isDone && (
-            <button
-              onClick={() => onStatusChange(issue.id, "todo")}
-              className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-all"
-            >
+            <button onClick={() => onStatusChange(issue.id, "todo")}
+              className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-all">
               Reopen
             </button>
           )}
@@ -273,23 +284,16 @@ function IssueCard({ issue, onStatusChange, onDragStart, onDragEnd }: {
   );
 }
 
-function HabitCard({ habit, weekDone, alreadyDoneToday, onDone, onDragStart, onDragEnd }: {
-  habit: Habit;
-  weekDone: number;
-  alreadyDoneToday: boolean;
-  onDone: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+function HabitCard({ habit, weekDone, alreadyDoneToday, onRequestDone, onDragStart, onDragEnd }: {
+  habit: Habit; weekDone: number; alreadyDoneToday: boolean;
+  onRequestDone: () => void; onDragStart: () => void; onDragEnd: () => void;
 }) {
   const remaining = habit.targetDaysPerWeek - weekDone;
   const doneForWeek = remaining <= 0;
-  const C = habit.color;
+  const C = biggerGoalColor(habit.biggerGoal, habit.color);
 
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
       className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing select-none"
       style={{ borderColor: `${C}30`, borderLeftWidth: 3, borderLeftColor: C }}
     >
@@ -297,9 +301,8 @@ function HabitCard({ habit, weekDone, alreadyDoneToday, onDone, onDragStart, onD
         {habit.biggerGoal ?? habit.name}
       </p>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: `${C}20`, color: C }}>
-          {habit.name}
-        </span>
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+          style={{ backgroundColor: `${C}20`, color: C }}>{habit.name}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           {doneForWeek ? (
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "#10b98120", color: "#10b981" }}>
@@ -310,10 +313,8 @@ function HabitCard({ habit, weekDone, alreadyDoneToday, onDone, onDragStart, onD
           ) : (
             <>
               <span className="text-[10px] text-muted-foreground">{remaining}× left</span>
-              <button
-                onClick={onDone}
-                className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all"
-              >
+              <button onClick={onRequestDone}
+                className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all">
                 Done today
               </button>
             </>
@@ -324,22 +325,16 @@ function HabitCard({ habit, weekDone, alreadyDoneToday, onDone, onDragStart, onD
   );
 }
 
-type BoardCard =
-  | { kind: "issue"; issue: AnyIssue }
-  | { kind: "habit"; habit: Habit };
+type BoardCard = { kind: "issue"; issue: AnyIssue } | { kind: "habit"; habit: Habit };
 
 const COL_STATUS: Record<string, string> = { todo: "todo", in_progress: "in_progress", done: "done" };
 
-function KanbanColumn({ title, color, columnKey, cards, habits, weekCounts, todayLogs, onStatusChange, onHabitDone, dragging, setDragging }: {
-  title: string; color: string; columnKey: string;
-  cards: BoardCard[];
-  habits: Habit[];
-  weekCounts: Record<number, number>;
-  todayLogs: HabitLog[];
+function KanbanColumn({ title, color, columnKey, cards, weekCounts, todayLogs, onRequestDone, onStatusChange, dragging, setDragging }: {
+  title: string; color: string; columnKey: string; cards: BoardCard[];
+  weekCounts: Record<number, number>; todayLogs: HabitLog[];
+  onRequestDone: (pending: PendingDone) => void;
   onStatusChange: (id: number, status: string) => void;
-  onHabitDone: (id: number) => void;
-  dragging: DragInfo | null;
-  setDragging: (d: DragInfo | null) => void;
+  dragging: DragInfo | null; setDragging: (d: DragInfo | null) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const today = localToday();
@@ -352,10 +347,12 @@ function KanbanColumn({ title, color, columnKey, cards, habits, weekCounts, toda
       onDrop={() => {
         setDragOver(false);
         if (!dragging) return;
-        if (dragging.type === "issue") {
+        if (dragging.type === "issue" && columnKey === "done") {
+          onRequestDone({ type: "issue", id: dragging.id });
+        } else if (dragging.type === "issue") {
           onStatusChange(dragging.id, COL_STATUS[columnKey] ?? "todo");
         } else if (dragging.type === "habit" && columnKey === "done") {
-          onHabitDone(dragging.id);
+          onRequestDone({ type: "habit", id: dragging.id });
         }
         setDragging(null);
       }}
@@ -367,26 +364,20 @@ function KanbanColumn({ title, color, columnKey, cards, habits, weekCounts, toda
       </div>
       <div className="space-y-2 p-1">
         {cards.map((card) => {
-          if (card.kind === "issue") {
-            return (
-              <IssueCard
-                key={`i-${card.issue.id}`}
-                issue={card.issue}
-                onStatusChange={onStatusChange}
-                onDragStart={() => setDragging({ type: "issue", id: card.issue.id })}
-                onDragEnd={() => setDragging(null)}
-              />
-            );
-          }
+          if (card.kind === "issue") return (
+            <IssueCard key={`i-${card.issue.id}`} issue={card.issue}
+              onRequestDone={(id) => onRequestDone({ type: "issue", id })}
+              onStatusChange={onStatusChange}
+              onDragStart={() => setDragging({ type: "issue", id: card.issue.id })}
+              onDragEnd={() => setDragging(null)}
+            />
+          );
           const weekDone = weekCounts[card.habit.id] ?? 0;
           const alreadyDoneToday = todayLogs.some((l) => l.habitId === card.habit.id && l.completed && l.date === today);
           return (
-            <HabitCard
-              key={`h-${card.habit.id}`}
-              habit={card.habit}
-              weekDone={weekDone}
-              alreadyDoneToday={alreadyDoneToday}
-              onDone={() => onHabitDone(card.habit.id)}
+            <HabitCard key={`h-${card.habit.id}`} habit={card.habit}
+              weekDone={weekDone} alreadyDoneToday={alreadyDoneToday}
+              onRequestDone={() => onRequestDone({ type: "habit", id: card.habit.id })}
               onDragStart={() => setDragging({ type: "habit", id: card.habit.id })}
               onDragEnd={() => setDragging(null)}
             />
@@ -402,52 +393,44 @@ function KanbanColumn({ title, color, columnKey, cards, habits, weekCounts, toda
   );
 }
 
-function BoardContent({ habits, weekCounts, todayLogs, sprintIssues, onStatusChange, onHabitDone, onPlanSprint }: {
-  habits: Habit[];
-  weekCounts: Record<number, number>;
-  todayLogs: HabitLog[];
+function BoardContent({ habits, weekCounts, todayLogs, sprintIssues, onRequestDone, onStatusChange, onPlanSprint }: {
+  habits: Habit[]; weekCounts: Record<number, number>; todayLogs: HabitLog[];
   sprintIssues: AnyIssue[];
+  onRequestDone: (pending: PendingDone) => void;
   onStatusChange: (id: number, status: string) => void;
-  onHabitDone: (id: number) => void;
   onPlanSprint: () => void;
 }) {
   const [dragging, setDragging] = useState<DragInfo | null>(null);
-  const today = localToday();
 
-  // Classify habits
-  const todoHabits = habits.filter((h) => (weekCounts[h.id] ?? 0) < h.targetDaysPerWeek);
-  const doneHabits = habits.filter((h) => (weekCounts[h.id] ?? 0) >= h.targetDaysPerWeek);
+  const todoHabits   = habits.filter((h) => (weekCounts[h.id] ?? 0) < h.targetDaysPerWeek);
+  const doneHabits   = habits.filter((h) => (weekCounts[h.id] ?? 0) >= h.targetDaysPerWeek);
 
   const todoCards: BoardCard[] = [
     ...todoHabits.map((h): BoardCard => ({ kind: "habit", habit: h })),
-    ...sprintIssues.filter((i) => ["backlog", "todo"].includes(i.status)).map((i): BoardCard => ({ kind: "issue", issue: i })),
+    ...sprintIssues.filter((i) => ["backlog","todo"].includes(i.status)).map((i): BoardCard => ({ kind: "issue", issue: i })),
   ];
   const inProgressCards: BoardCard[] = sprintIssues
-    .filter((i) => ["in_progress", "in_review"].includes(i.status))
+    .filter((i) => ["in_progress","in_review"].includes(i.status))
     .map((i): BoardCard => ({ kind: "issue", issue: i }));
   const doneCards: BoardCard[] = [
     ...doneHabits.map((h): BoardCard => ({ kind: "habit", habit: h })),
     ...sprintIssues.filter((i) => DONE_STATUSES.includes(i.status)).map((i): BoardCard => ({ kind: "issue", issue: i })),
   ];
 
-  const colProps = { habits, weekCounts, todayLogs, onStatusChange, onHabitDone, dragging, setDragging };
+  const colProps = { weekCounts, todayLogs, onRequestDone, onStatusChange, dragging, setDragging };
   const isEmpty = sprintIssues.length === 0 && habits.length === 0;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{sprintIssues.length} sprint tasks · {habits.length} habits</p>
-        <button onClick={onPlanSprint} className="text-xs font-medium text-primary hover:underline">
-          Plan sprint →
-        </button>
+        <p className="text-xs text-muted-foreground">{sprintIssues.length} sprint tickets · {habits.length} habits</p>
+        <button onClick={onPlanSprint} className="text-xs font-medium text-primary hover:underline">Plan sprint →</button>
       </div>
-
       {isEmpty ? (
         <div className="rounded-xl border border-dashed border-border p-8 text-center space-y-2">
           <p className="text-sm font-medium">Board is empty</p>
           <p className="text-xs text-muted-foreground">
-            Add habits or{" "}
-            <button onClick={onPlanSprint} className="text-primary hover:underline">plan your sprint →</button>
+            Add habits or <button onClick={onPlanSprint} className="text-primary hover:underline">plan your sprint →</button>
           </p>
         </div>
       ) : (
@@ -484,7 +467,7 @@ function ActivityCalendar({ habitLogs, workouts, totalHabits }: {
     return grid;
   }, []);
 
-  const LEVELS = ["bg-muted/50", "bg-violet-900/50", "bg-violet-700/60", "bg-violet-500/70", "bg-violet-400"];
+  const LEVELS = ["bg-muted/50","bg-violet-900/50","bg-violet-700/60","bg-violet-500/70","bg-violet-400"];
 
   return (
     <div className="space-y-2">
@@ -502,8 +485,7 @@ function ActivityCalendar({ habitLogs, workouts, totalHabits }: {
                   level = ratio >= 0.75 ? 4 : ratio >= 0.5 ? 3 : ratio >= 0.25 ? 2 : 1;
                 }
                 return (
-                  <div
-                    key={date}
+                  <div key={date}
                     title={`${date}${completed ? ` · ${completed} habits` : ""}${isWorkout ? " · workout" : ""}`}
                     className={`h-[11px] w-[11px] rounded-[2px] ${isFuture ? "bg-muted/20" : LEVELS[level]} ${isWorkout ? "ring-1 ring-emerald-400/70" : ""}`}
                   />
@@ -524,9 +506,43 @@ function ActivityCalendar({ habitLogs, workouts, totalHabits }: {
   );
 }
 
-function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
+function TicketStats({ allIssues }: { allIssues: AnyIssue[] }) {
+  const total     = allIssues.length;
+  const completed = allIssues.filter((i) => i.status === "done").length;
+  const cancelled = allIssues.filter((i) => i.status === "cancelled").length;
+  const active    = total - completed - cancelled;
+
+  const data = [
+    { label: "Active",    count: active,    color: "#6366f1" },
+    { label: "Completed", count: completed, color: "#10b981" },
+    { label: "Cancelled", count: cancelled, color: "#f43f5e" },
+  ];
+
+  if (total === 0) return <p className="text-xs text-muted-foreground italic">No tickets yet.</p>;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        {data.map(({ label, count, color }) => (
+          <div key={label} className="rounded-lg border bg-card p-3 text-center" style={{ borderColor: `${color}25` }}>
+            <p className="text-xl font-bold" style={{ color }}>{count}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
+          </div>
+        ))}
+      </div>
+      <div className="h-2 w-full rounded-full overflow-hidden flex">
+        {data.map(({ count, color }) => total > 0 && count > 0 ? (
+          <div key={color} className="h-full transition-all" style={{ width: `${(count / total) * 100}%`, backgroundColor: color }} />
+        ) : null)}
+      </div>
+      <p className="text-[10px] text-muted-foreground">{total} total tickets · {Math.round((completed / total) * 100)}% completion rate</p>
+    </div>
+  );
+}
+
+function AnalyticsContent({ habitLogs, workouts, sprintIssues, allIssues, totalHabits }: {
   habitLogs: HabitLogDay[]; workouts: WorkoutDay[];
-  sprintIssues: AnyIssue[]; totalHabits: number;
+  sprintIssues: AnyIssue[]; allIssues: AnyIssue[]; totalHabits: number;
 }) {
   const last30 = useMemo(() => {
     const map = Object.fromEntries(habitLogs.map((l) => [l.date, l.completed]));
@@ -548,7 +564,7 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
   }, [sprintIssues]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
         <p className="text-xs text-muted-foreground mb-2">Habit completion · past year</p>
         <ActivityCalendar habitLogs={habitLogs} workouts={workouts} totalHabits={totalHabits} />
@@ -556,9 +572,7 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div>
           <p className="text-xs text-muted-foreground mb-2">Habit % · last 30 days</p>
-          {totalHabits === 0 ? (
-            <p className="text-xs text-muted-foreground italic">No habits yet.</p>
-          ) : (
+          {totalHabits === 0 ? <p className="text-xs text-muted-foreground italic">No habits yet.</p> : (
             <ResponsiveContainer width="100%" height={120}>
               <LineChart data={last30}>
                 <XAxis dataKey="date" tick={{ fontSize: 9 }} interval={6} />
@@ -570,10 +584,8 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
           )}
         </div>
         <div>
-          <p className="text-xs text-muted-foreground mb-2">Tasks completed · by week</p>
-          {tasksByWeek.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">No completed tasks yet.</p>
-          ) : (
+          <p className="text-xs text-muted-foreground mb-2">Tickets completed · by week</p>
+          {tasksByWeek.length === 0 ? <p className="text-xs text-muted-foreground italic">No completed tickets yet.</p> : (
             <ResponsiveContainer width="100%" height={120}>
               <BarChart data={tasksByWeek}>
                 <XAxis dataKey="week" tick={{ fontSize: 9 }} />
@@ -585,6 +597,10 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
           )}
         </div>
       </div>
+      <div>
+        <p className="text-xs text-muted-foreground mb-2">Ticket overview · all time</p>
+        <TicketStats allIssues={allIssues} />
+      </div>
     </div>
   );
 }
@@ -592,11 +608,11 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, totalHabits }: {
 // ─── Quick links ──────────────────────────────────────────────────────────────
 
 const QUICK_LINKS = [
-  { href: "/mood",      label: "Mood",     icon: Heart,        color: "#f43f5e" },
-  { href: "/fitness",   label: "Fitness",  icon: Activity,     color: "#10b981" },
-  { href: "/finance",   label: "Finance",  icon: DollarSign,   color: "#f59e0b" },
-  { href: "/calendar",  label: "Calendar", icon: CalendarDays, color: "#6366f1" },
-  { href: "/memories",  label: "Memories", icon: Camera,       color: "#d946ef" },
+  { href: "/mood",     label: "Mood",     icon: Heart,        color: "#f43f5e" },
+  { href: "/fitness",  label: "Fitness",  icon: Activity,     color: "#10b981" },
+  { href: "/finance",  label: "Finance",  icon: DollarSign,   color: "#f59e0b" },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays, color: "#6366f1" },
+  { href: "/memories", label: "Memories", icon: Camera,       color: "#d946ef" },
 ] as const;
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -609,10 +625,12 @@ export default function DashboardPage() {
   const [todayLogs, setTodayLogs]     = useState<HabitLog[]>([]);
   const [weekCounts, setWeekCounts]   = useState<Record<number, number>>({});
   const [sprintIssues, setSprintIssues] = useState<AnyIssue[]>([]);
+  const [allIssues, setAllIssues]     = useState<AnyIssue[]>([]);
   const [habitLogs, setHabitLogs]     = useState<HabitLogDay[]>([]);
   const [workouts, setWorkouts]       = useState<WorkoutDay[]>([]);
   const [loading, setLoading]         = useState(true);
   const [sprintOpen, setSprintOpen]   = useState(false);
+  const [pendingDone, setPendingDone] = useState<PendingDone | null>(null);
 
   const sprintIds = useMemo(() => new Set(sprintIssues.map((i) => i.id)), [sprintIssues]);
 
@@ -620,19 +638,21 @@ export default function DashboardPage() {
     async function load() {
       try {
         const safe = (r: Response) => r.ok ? r.json() : Promise.resolve(null);
-        const [moodData, habitsData, sprintData, logsData, workoutsData, weekData] = await Promise.all([
+        const [moodData, habitsData, sprintData, logsData, workoutsData, weekData, allIssuesData] = await Promise.all([
           fetch(`/api/mood?date=${today}`).then(safe),
           fetch("/api/habits").then(safe),
           fetch("/api/issues?sprint=true").then(safe),
           fetch("/api/habits/logs").then(safe),
           fetch("/api/fitness/sessions").then(safe),
           fetch("/api/habits/logs/week").then(safe),
+          fetch("/api/issues?all=true").then(safe),
         ]);
 
         setMood(moodData?.moodScore ? moodData : null);
         const h: Habit[] = Array.isArray(habitsData) ? habitsData : [];
         setHabits(h);
         setSprintIssues(Array.isArray(sprintData) ? sprintData : []);
+        setAllIssues(Array.isArray(allIssuesData) ? allIssuesData : []);
         setHabitLogs(Array.isArray(logsData) ? logsData : []);
         setWorkouts(Array.isArray(workoutsData) ? workoutsData : []);
 
@@ -660,20 +680,34 @@ export default function DashboardPage() {
       body: JSON.stringify({ status }),
     });
     setSprintIssues((prev) => prev.map((i) => i.id === id ? { ...i, status } : i));
+    setAllIssues((prev) => prev.map((i) => i.id === id ? { ...i, status } : i));
   }
 
-  async function markHabitDone(habitId: number) {
+  async function markHabitDone(habitId: number, logStatus: "completed" | "skipped") {
+    const completed = logStatus === "completed";
     await fetch(`/api/habits/${habitId}/log`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: today, completed: true, logStatus: "completed" }),
+      body: JSON.stringify({ date: today, completed, logStatus }),
     });
-    setWeekCounts((prev) => ({ ...prev, [habitId]: (prev[habitId] ?? 0) + 1 }));
+    if (completed) {
+      setWeekCounts((prev) => ({ ...prev, [habitId]: (prev[habitId] ?? 0) + 1 }));
+    }
     setTodayLogs((prev) => {
-      const existing = prev.find((l) => l.habitId === habitId && l.date === today);
-      if (existing) return prev.map((l) => l.habitId === habitId && l.date === today ? { ...l, completed: true, logStatus: "completed" } : l);
-      return [...prev, { habitId, date: today, completed: true, logStatus: "completed" }];
+      const exists = prev.find((l) => l.habitId === habitId && l.date === today);
+      const entry: HabitLog = { habitId, date: today, completed, logStatus };
+      return exists ? prev.map((l) => l.habitId === habitId && l.date === today ? entry : l) : [...prev, entry];
     });
+  }
+
+  function confirmDone(choice: "completed" | "cancelled") {
+    if (!pendingDone) return;
+    if (pendingDone.type === "issue") {
+      changeIssueStatus(pendingDone.id, choice === "completed" ? "done" : "cancelled");
+    } else {
+      markHabitDone(pendingDone.id, choice === "completed" ? "completed" : "skipped");
+    }
+    setPendingDone(null);
   }
 
   async function toggleSprint(id: number, inSprint: boolean) {
@@ -700,7 +734,6 @@ export default function DashboardPage() {
   return (
     <>
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8 md:pl-6">
-
         {/* Hero */}
         <div className="space-y-3 pt-10 md:pt-0">
           <div className="flex items-start justify-between">
@@ -716,14 +749,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
-              style={{ width: `${(dayOfYear / 365) * 100}%` }}
-            />
+            <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500"
+              style={{ width: `${(dayOfYear / 365) * 100}%` }} />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Day {dayOfYear} of 365 — {Math.round((dayOfYear / 365) * 100)}% through the year
-          </p>
+          <p className="text-xs text-muted-foreground">Day {dayOfYear} of 365 — {Math.round((dayOfYear / 365) * 100)}% through the year</p>
         </div>
 
         {loading ? (
@@ -759,18 +788,12 @@ export default function DashboardPage() {
             </div>
 
             {/* Board */}
-            <CollapsibleSection
-              id="board"
-              title="Board"
-              icon={<LayoutDashboard className="h-4 w-4 text-violet-400" />}
-            >
+            <CollapsibleSection id="board" title="Board" icon={<LayoutDashboard className="h-4 w-4 text-violet-400" />}>
               <BoardContent
-                habits={habits}
-                weekCounts={weekCounts}
-                todayLogs={todayLogs}
+                habits={habits} weekCounts={weekCounts} todayLogs={todayLogs}
                 sprintIssues={sprintIssues}
+                onRequestDone={setPendingDone}
                 onStatusChange={changeIssueStatus}
-                onHabitDone={markHabitDone}
                 onPlanSprint={() => setSprintOpen(true)}
               />
             </CollapsibleSection>
@@ -778,15 +801,10 @@ export default function DashboardPage() {
             <div className="border-t border-border" />
 
             {/* Analytics */}
-            <CollapsibleSection
-              id="analytics"
-              title="Analytics"
-              icon={<BarChart2 className="h-4 w-4 text-indigo-400" />}
-            >
+            <CollapsibleSection id="analytics" title="Analytics" icon={<BarChart2 className="h-4 w-4 text-indigo-400" />}>
               <AnalyticsContent
-                habitLogs={habitLogs}
-                workouts={workouts}
-                sprintIssues={sprintIssues}
+                habitLogs={habitLogs} workouts={workouts}
+                sprintIssues={sprintIssues} allIssues={allIssues}
                 totalHabits={habits.length}
               />
             </CollapsibleSection>
@@ -795,10 +813,8 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {QUICK_LINKS.map(({ href, label, icon: Icon, color }) => (
                 <Link key={href} href={href} className="group">
-                  <div
-                    className="rounded-xl border bg-card p-3 flex items-center gap-2.5 hover:-translate-y-0.5 hover:shadow-sm transition-all"
-                    style={{ borderColor: `${color}25` }}
-                  >
+                  <div className="rounded-xl border bg-card p-3 flex items-center gap-2.5 hover:-translate-y-0.5 hover:shadow-sm transition-all"
+                    style={{ borderColor: `${color}25` }}>
                     <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${color}18` }}>
                       <Icon className="h-3.5 w-3.5" style={{ color }} />
                     </div>
@@ -812,12 +828,11 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <SprintDrawer
-        open={sprintOpen}
-        onClose={() => setSprintOpen(false)}
-        sprintIds={sprintIds}
-        onToggle={toggleSprint}
-      />
+      <SprintDrawer open={sprintOpen} onClose={() => setSprintOpen(false)} sprintIds={sprintIds} onToggle={toggleSprint} />
+
+      {pendingDone && (
+        <DoneModal pending={pendingDone} onConfirm={confirmDone} onCancel={() => setPendingDone(null)} />
+      )}
     </>
   );
 }

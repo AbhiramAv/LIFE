@@ -145,7 +145,7 @@ function InlineAdd({ onAdd }: { onAdd: (title: string) => void }) {
         onClick={() => { setActive(true); setTimeout(() => ref.current?.focus(), 0); }}
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
       >
-        <Plus className="h-3.5 w-3.5" /> Add issue
+        <Plus className="h-3.5 w-3.5" /> Add ticket
       </button>
     );
   }
@@ -156,7 +156,7 @@ function InlineAdd({ onAdd }: { onAdd: (title: string) => void }) {
         ref={ref}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Issue title..."
+        placeholder="Ticket title..."
         className="h-7 text-sm"
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
@@ -309,7 +309,7 @@ function IssueDetailDialog({
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => { if (title.trim() && title !== issue.title) save({ title: title.trim() }); }}
           className="text-base font-semibold border-none px-0 focus-visible:ring-0 shadow-none"
-          placeholder="Issue title..."
+          placeholder="Ticket title..."
         />
 
         {/* Description */}
@@ -463,9 +463,9 @@ export default function ProjectDetailPage() {
   }
 
   const Icon = CATEGORY_ICONS[project.category];
-  const totalIssues = issues.length;
-  const doneIssues = issues.filter((i) => i.status === "done").length;
-  const progress = totalIssues > 0 ? Math.round((doneIssues / totalIssues) * 100) : 0;
+  const totalTickets = issues.length;
+  const doneTickets = issues.filter((i) => i.status === "done").length;
+  const progress = totalTickets > 0 ? Math.round((doneTickets / totalTickets) * 100) : 0;
   const daysLeft = project.targetDate
     ? Math.ceil((new Date(project.targetDate + "T12:00:00").getTime() - Date.now()) / 86400000)
     : null;
@@ -520,7 +520,7 @@ export default function ProjectDetailPage() {
               />
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{doneIssues}/{totalIssues} done</span>
+              <span className="text-xs text-muted-foreground">{doneTickets}/{totalTickets} done</span>
               <span className="text-xs font-semibold" style={{ color: project.color }}>{progress}%</span>
             </div>
           </div>
