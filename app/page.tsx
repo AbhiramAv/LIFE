@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -20,8 +20,9 @@ type AnyIssue = {
 };
 type HabitLogDay  = { date: string; completed: number };
 type WorkoutDay   = { date: string };
-type Habit        = { id: number; name: string; biggerGoal: string | null; color: string };
+type Habit        = { id: number; name: string; biggerGoal: string | null; color: string; targetDaysPerWeek: number };
 type HabitLog     = { habitId: number; date: string; completed: boolean; logStatus: string };
+type WeekCount    = { habitId: number; doneThisWeek: number };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,14 +70,17 @@ function CollapsibleSection({ id, title, icon, children, badge }: {
     <div className="space-y-3">
       <button
         onClick={toggle}
-        className="flex items-center gap-2 w-full group hover:text-foreground transition-colors"
+        className="flex items-center gap-2 w-full group"
       >
         {icon}
         <span className="text-sm font-semibold">{title}</span>
         {badge}
-        <ChevronDown
-          className={`ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-0" : "-rotate-90"}`}
-        />
+        <span className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">{open ? "collapse" : "expand"}</span>
+          <ChevronDown
+            className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-0" : "-rotate-90"}`}
+          />
+        </span>
       </button>
       {open && children}
     </div>
@@ -104,7 +108,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
     }
   }, [open, allIssues]);
 
-  // Refresh issue list when sprint changes (so moved items disappear from backlog)
   const backlog = useMemo(
     () => allIssues?.filter((i) => !sprintIds.has(i.id) && !["done", "cancelled", "skipped"].includes(i.status)) ?? [],
     [allIssues, sprintIds]
@@ -129,7 +132,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <aside className="relative w-[440px] max-w-full bg-background border-l border-border flex flex-col shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div>
             <h2 className="font-semibold text-sm">Plan this week</h2>
@@ -141,7 +143,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Backlog column */}
           <div className="flex-1 overflow-y-auto p-4 border-r border-border space-y-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Backlog</p>
             {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
@@ -168,7 +169,6 @@ function SprintDrawer({ open, onClose, sprintIds, onToggle }: {
             ))}
           </div>
 
-          {/* Sprint column */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">This week</p>
             {inSprint.length === 0 && (
@@ -215,9 +215,13 @@ const STATUS_TAG: Record<string, { label: string; color: string }> = {
   missed:    { label: "missed",    color: "#6b7280" },
 };
 
-function IssueCard({ issue, onStatusChange }: {
+type DragInfo = { type: "issue" | "habit"; id: number };
+
+function IssueCard({ issue, onStatusChange, onDragStart, onDragEnd }: {
   issue: AnyIssue;
   onStatusChange: (id: number, status: string) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
@@ -225,7 +229,10 @@ function IssueCard({ issue, onStatusChange }: {
 
   return (
     <div
-      className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all"
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing select-none"
       style={{ borderColor: `${issue.projectColor}30`, borderLeftWidth: 3, borderLeftColor: issue.projectColor }}
     >
       <p className={`text-xs font-medium leading-snug ${isDone ? "line-through text-muted-foreground" : ""}`}>
@@ -240,10 +247,7 @@ function IssueCard({ issue, onStatusChange }: {
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {tag && (
-            <span
-              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-              style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-            >
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${tag.color}20`, color: tag.color }}>
               {tag.label}
             </span>
           )}
@@ -269,34 +273,52 @@ function IssueCard({ issue, onStatusChange }: {
   );
 }
 
-function HabitCard({ habit, logStatus }: { habit: Habit; logStatus: string | null }) {
-  const isDone = logStatus === "completed";
-  const tag = logStatus ? STATUS_TAG[logStatus] : null;
-  const HABIT_COLOR = habit.color;
+function HabitCard({ habit, weekDone, alreadyDoneToday, onDone, onDragStart, onDragEnd }: {
+  habit: Habit;
+  weekDone: number;
+  alreadyDoneToday: boolean;
+  onDone: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+}) {
+  const remaining = habit.targetDaysPerWeek - weekDone;
+  const doneForWeek = remaining <= 0;
+  const C = habit.color;
 
   return (
     <div
-      className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all"
-      style={{ borderColor: `${HABIT_COLOR}30`, borderLeftWidth: 3, borderLeftColor: HABIT_COLOR }}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className="rounded-lg border bg-card p-3 space-y-2.5 hover:shadow-sm transition-all cursor-grab active:cursor-grabbing select-none"
+      style={{ borderColor: `${C}30`, borderLeftWidth: 3, borderLeftColor: C }}
     >
-      <p className={`text-xs font-medium leading-snug ${isDone ? "line-through text-muted-foreground" : ""}`}>
+      <p className={`text-xs font-medium leading-snug ${doneForWeek ? "line-through text-muted-foreground" : ""}`}>
         {habit.biggerGoal ?? habit.name}
       </p>
       <div className="flex items-center justify-between gap-2">
-        <span
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-          style={{ backgroundColor: `${HABIT_COLOR}20`, color: HABIT_COLOR }}
-        >
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{ backgroundColor: `${C}20`, color: C }}>
           {habit.name}
         </span>
-        {tag && (
-          <span
-            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-            style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-          >
-            {tag.label}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {doneForWeek ? (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "#10b98120", color: "#10b981" }}>
+              done this week ✓
+            </span>
+          ) : alreadyDoneToday ? (
+            <span className="text-[10px] text-muted-foreground">✓ today · {remaining}× left</span>
+          ) : (
+            <>
+              <span className="text-[10px] text-muted-foreground">{remaining}× left</span>
+              <button
+                onClick={onDone}
+                className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/40 transition-all"
+              >
+                Done today
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -304,79 +326,118 @@ function HabitCard({ habit, logStatus }: { habit: Habit; logStatus: string | nul
 
 type BoardCard =
   | { kind: "issue"; issue: AnyIssue }
-  | { kind: "habit"; habit: Habit; logStatus: string | null };
+  | { kind: "habit"; habit: Habit };
 
-function KanbanColumn({ title, color, cards, onStatusChange }: {
-  title: string; color: string; cards: BoardCard[];
+const COL_STATUS: Record<string, string> = { todo: "todo", in_progress: "in_progress", done: "done" };
+
+function KanbanColumn({ title, color, columnKey, cards, habits, weekCounts, todayLogs, onStatusChange, onHabitDone, dragging, setDragging }: {
+  title: string; color: string; columnKey: string;
+  cards: BoardCard[];
+  habits: Habit[];
+  weekCounts: Record<number, number>;
+  todayLogs: HabitLog[];
   onStatusChange: (id: number, status: string) => void;
+  onHabitDone: (id: number) => void;
+  dragging: DragInfo | null;
+  setDragging: (d: DragInfo | null) => void;
 }) {
-  const visible = title === "Done" ? cards.slice(0, 20) : cards;
+  const [dragOver, setDragOver] = useState(false);
+  const today = localToday();
+
   return (
-    <div className="space-y-2 min-w-0">
-      <div className="flex items-center gap-2 pb-1.5 border-b border-border">
+    <div
+      className={`space-y-2 min-w-0 rounded-lg transition-colors ${dragOver ? "bg-accent/40 ring-1 ring-border" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={() => {
+        setDragOver(false);
+        if (!dragging) return;
+        if (dragging.type === "issue") {
+          onStatusChange(dragging.id, COL_STATUS[columnKey] ?? "todo");
+        } else if (dragging.type === "habit" && columnKey === "done") {
+          onHabitDone(dragging.id);
+        }
+        setDragging(null);
+      }}
+    >
+      <div className="flex items-center gap-2 pb-1.5 border-b border-border px-1">
         <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
         <span className="text-xs text-muted-foreground ml-auto">{cards.length}</span>
       </div>
-      <div className="space-y-2">
-        {visible.map((card) =>
-          card.kind === "issue" ? (
-            <IssueCard key={`i-${card.issue.id}`} issue={card.issue} onStatusChange={onStatusChange} />
-          ) : (
-            <HabitCard key={`h-${card.habit.id}`} habit={card.habit} logStatus={card.logStatus} />
-          )
-        )}
-        {visible.length === 0 && (
+      <div className="space-y-2 p-1">
+        {cards.map((card) => {
+          if (card.kind === "issue") {
+            return (
+              <IssueCard
+                key={`i-${card.issue.id}`}
+                issue={card.issue}
+                onStatusChange={onStatusChange}
+                onDragStart={() => setDragging({ type: "issue", id: card.issue.id })}
+                onDragEnd={() => setDragging(null)}
+              />
+            );
+          }
+          const weekDone = weekCounts[card.habit.id] ?? 0;
+          const alreadyDoneToday = todayLogs.some((l) => l.habitId === card.habit.id && l.completed && l.date === today);
+          return (
+            <HabitCard
+              key={`h-${card.habit.id}`}
+              habit={card.habit}
+              weekDone={weekDone}
+              alreadyDoneToday={alreadyDoneToday}
+              onDone={() => onHabitDone(card.habit.id)}
+              onDragStart={() => setDragging({ type: "habit", id: card.habit.id })}
+              onDragEnd={() => setDragging(null)}
+            />
+          );
+        })}
+        {cards.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-5 text-center">
             <p className="text-xs text-muted-foreground">Empty</p>
           </div>
-        )}
-        {title === "Done" && cards.length > 20 && (
-          <p className="text-[11px] text-muted-foreground text-center">+{cards.length - 20} more</p>
         )}
       </div>
     </div>
   );
 }
 
-function BoardContent({ habits, todayLogs, sprintIssues, onStatusChange, onPlanSprint }: {
-  habits: Habit[]; todayLogs: HabitLog[]; sprintIssues: AnyIssue[];
+function BoardContent({ habits, weekCounts, todayLogs, sprintIssues, onStatusChange, onHabitDone, onPlanSprint }: {
+  habits: Habit[];
+  weekCounts: Record<number, number>;
+  todayLogs: HabitLog[];
+  sprintIssues: AnyIssue[];
   onStatusChange: (id: number, status: string) => void;
+  onHabitDone: (id: number) => void;
   onPlanSprint: () => void;
 }) {
+  const [dragging, setDragging] = useState<DragInfo | null>(null);
   const today = localToday();
-  const logMap = Object.fromEntries(
-    todayLogs.filter((l) => l.date === today).map((l) => [l.habitId, l])
-  );
+
+  // Classify habits
+  const todoHabits = habits.filter((h) => (weekCounts[h.id] ?? 0) < h.targetDaysPerWeek);
+  const doneHabits = habits.filter((h) => (weekCounts[h.id] ?? 0) >= h.targetDaysPerWeek);
 
   const todoCards: BoardCard[] = [
-    ...habits
-      .filter((h) => !logMap[h.id] || (!logMap[h.id].completed && logMap[h.id].logStatus !== "skipped"))
-      .map((h): BoardCard => ({ kind: "habit", habit: h, logStatus: logMap[h.id]?.logStatus ?? null })),
-    ...sprintIssues.filter((i) => ["backlog", "todo"].includes(i.status))
-      .map((i): BoardCard => ({ kind: "issue", issue: i })),
+    ...todoHabits.map((h): BoardCard => ({ kind: "habit", habit: h })),
+    ...sprintIssues.filter((i) => ["backlog", "todo"].includes(i.status)).map((i): BoardCard => ({ kind: "issue", issue: i })),
   ];
   const inProgressCards: BoardCard[] = sprintIssues
     .filter((i) => ["in_progress", "in_review"].includes(i.status))
     .map((i): BoardCard => ({ kind: "issue", issue: i }));
   const doneCards: BoardCard[] = [
-    ...habits
-      .filter((h) => logMap[h.id] && (logMap[h.id].completed || logMap[h.id].logStatus === "skipped"))
-      .map((h): BoardCard => ({ kind: "habit", habit: h, logStatus: logMap[h.id].logStatus })),
-    ...sprintIssues.filter((i) => DONE_STATUSES.includes(i.status))
-      .map((i): BoardCard => ({ kind: "issue", issue: i })),
+    ...doneHabits.map((h): BoardCard => ({ kind: "habit", habit: h })),
+    ...sprintIssues.filter((i) => DONE_STATUSES.includes(i.status)).map((i): BoardCard => ({ kind: "issue", issue: i })),
   ];
 
+  const colProps = { habits, weekCounts, todayLogs, onStatusChange, onHabitDone, dragging, setDragging };
   const isEmpty = sprintIssues.length === 0 && habits.length === 0;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{sprintIssues.length} sprint tasks · {habits.length} habits</p>
-        <button
-          onClick={onPlanSprint}
-          className="text-xs font-medium text-primary hover:underline"
-        >
+        <button onClick={onPlanSprint} className="text-xs font-medium text-primary hover:underline">
           Plan sprint →
         </button>
       </div>
@@ -391,9 +452,9 @@ function BoardContent({ habits, todayLogs, sprintIssues, onStatusChange, onPlanS
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <KanbanColumn title="Todo"        color="#6366f1" cards={todoCards}       onStatusChange={onStatusChange} />
-          <KanbanColumn title="In Progress" color="#f59e0b" cards={inProgressCards} onStatusChange={onStatusChange} />
-          <KanbanColumn title="Done"        color="#10b981" cards={doneCards}       onStatusChange={onStatusChange} />
+          <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        cards={todoCards}       {...colProps} />
+          <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" cards={inProgressCards} {...colProps} />
+          <KanbanColumn title="Done"        color="#10b981" columnKey="done"        cards={doneCards}       {...colProps} />
         </div>
       )}
     </div>
@@ -546,6 +607,7 @@ export default function DashboardPage() {
   const [mood, setMood]               = useState<{ moodScore: number } | null>(null);
   const [habits, setHabits]           = useState<Habit[]>([]);
   const [todayLogs, setTodayLogs]     = useState<HabitLog[]>([]);
+  const [weekCounts, setWeekCounts]   = useState<Record<number, number>>({});
   const [sprintIssues, setSprintIssues] = useState<AnyIssue[]>([]);
   const [habitLogs, setHabitLogs]     = useState<HabitLogDay[]>([]);
   const [workouts, setWorkouts]       = useState<WorkoutDay[]>([]);
@@ -558,20 +620,25 @@ export default function DashboardPage() {
     async function load() {
       try {
         const safe = (r: Response) => r.ok ? r.json() : Promise.resolve(null);
-        const [moodData, habitsData, sprintData, logsData, workoutsData] = await Promise.all([
+        const [moodData, habitsData, sprintData, logsData, workoutsData, weekData] = await Promise.all([
           fetch(`/api/mood?date=${today}`).then(safe),
           fetch("/api/habits").then(safe),
           fetch("/api/issues?sprint=true").then(safe),
           fetch("/api/habits/logs").then(safe),
           fetch("/api/fitness/sessions").then(safe),
+          fetch("/api/habits/logs/week").then(safe),
         ]);
 
         setMood(moodData?.moodScore ? moodData : null);
-        const h = Array.isArray(habitsData) ? habitsData : [];
+        const h: Habit[] = Array.isArray(habitsData) ? habitsData : [];
         setHabits(h);
         setSprintIssues(Array.isArray(sprintData) ? sprintData : []);
         setHabitLogs(Array.isArray(logsData) ? logsData : []);
         setWorkouts(Array.isArray(workoutsData) ? workoutsData : []);
+
+        const wc: Record<number, number> = {};
+        (Array.isArray(weekData) ? weekData : []).forEach((r: WeekCount) => { wc[r.habitId] = r.doneThisWeek; });
+        setWeekCounts(wc);
 
         if (h.length > 0) {
           const logs = await Promise.all(h.map((hb: Habit) => fetch(`/api/habits/${hb.id}/log`).then(safe)));
@@ -595,6 +662,20 @@ export default function DashboardPage() {
     setSprintIssues((prev) => prev.map((i) => i.id === id ? { ...i, status } : i));
   }
 
+  async function markHabitDone(habitId: number) {
+    await fetch(`/api/habits/${habitId}/log`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: today, completed: true, logStatus: "completed" }),
+    });
+    setWeekCounts((prev) => ({ ...prev, [habitId]: (prev[habitId] ?? 0) + 1 }));
+    setTodayLogs((prev) => {
+      const existing = prev.find((l) => l.habitId === habitId && l.date === today);
+      if (existing) return prev.map((l) => l.habitId === habitId && l.date === today ? { ...l, completed: true, logStatus: "completed" } : l);
+      return [...prev, { habitId, date: today, completed: true, logStatus: "completed" }];
+    });
+  }
+
   async function toggleSprint(id: number, inSprint: boolean) {
     await fetch(`/api/issues/${id}`, {
       method: "PATCH",
@@ -602,7 +683,6 @@ export default function DashboardPage() {
       body: JSON.stringify({ inSprint }),
     });
     if (inSprint) {
-      // Fetch the full issue with project info to add to board
       const data = await fetch("/api/issues").then((r) => r.json());
       const issue = (Array.isArray(data) ? data : []).find((i: AnyIssue) => i.id === id);
       if (issue) setSprintIssues((prev) => [...prev, { ...issue, inSprint: true }]);
@@ -672,7 +752,7 @@ export default function DashboardPage() {
               </Link>
               <div className="flex-1" />
               {QUICK_LINKS.slice(1).map(({ href, label, icon: Icon, color }) => (
-                <Link key={href} href={href} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1" style={{}}>
+                <Link key={href} href={href} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
                   <Icon className="h-3.5 w-3.5" style={{ color }} />{label}
                 </Link>
               ))}
@@ -682,13 +762,15 @@ export default function DashboardPage() {
             <CollapsibleSection
               id="board"
               title="Board"
-              icon={<LayoutDashboard className="h-4 w-4 text-muted-foreground" />}
+              icon={<LayoutDashboard className="h-4 w-4 text-violet-400" />}
             >
               <BoardContent
                 habits={habits}
+                weekCounts={weekCounts}
                 todayLogs={todayLogs}
                 sprintIssues={sprintIssues}
                 onStatusChange={changeIssueStatus}
+                onHabitDone={markHabitDone}
                 onPlanSprint={() => setSprintOpen(true)}
               />
             </CollapsibleSection>
@@ -699,7 +781,7 @@ export default function DashboardPage() {
             <CollapsibleSection
               id="analytics"
               title="Analytics"
-              icon={<BarChart2 className="h-4 w-4 text-muted-foreground" />}
+              icon={<BarChart2 className="h-4 w-4 text-indigo-400" />}
             >
               <AnalyticsContent
                 habitLogs={habitLogs}
@@ -730,7 +812,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Sprint planning drawer */}
       <SprintDrawer
         open={sprintOpen}
         onClose={() => setSprintOpen(false)}

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
+import { RouteAccentBar } from "@/components/route-accent";
 import { ThemeProvider } from "@/components/theme-provider";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -28,8 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <div className="flex flex-col md:flex-row min-h-screen">
             <Nav />
-            <main className="flex-1 pb-4 md:pb-0 overflow-y-auto min-h-screen">
-              {children}
+            <main className="flex-1 pb-4 md:pb-0 overflow-y-auto min-h-screen flex flex-col">
+              <RouteAccentBar />
+              <div className="flex-1">{children}</div>
             </main>
           </div>
         </ThemeProvider>

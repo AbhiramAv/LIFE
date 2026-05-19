@@ -6,8 +6,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Heart, Target, Activity, DollarSign,
-  Layers, Moon, Sun, Sparkles, Camera, CalendarDays,
-  PanelLeftClose, PanelLeftOpen, Menu, X,
+  Layers, Moon, Sun, Sparkles, Camera, CalendarDays, Menu, X,
 } from "lucide-react";
 
 export const NAV_LINKS = [
@@ -77,7 +76,6 @@ export function Nav() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Restore collapse state from localStorage
   useEffect(() => {
     const stored = localStorage.getItem("nav-collapsed");
     if (stored === "true") setCollapsed(true);
@@ -90,7 +88,6 @@ export function Nav() {
     });
   }
 
-  // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   return (
@@ -101,39 +98,40 @@ export function Nav() {
           collapsed ? "w-[56px]" : "w-56"
         }`}
       >
-        {/* Logo */}
-        <div className={`flex items-center gap-2.5 px-3 py-5 border-b border-border ${collapsed ? "justify-center" : "px-4"}`}>
-          <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-            <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-          </div>
+        {/* Header — hamburger at top-left */}
+        <div className={`flex items-center border-b border-border h-14 ${collapsed ? "justify-center px-2" : "gap-2.5 px-3"}`}>
+          <button
+            onClick={toggleCollapse}
+            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
+            title={collapsed ? "Expand" : "Collapse"}
+          >
+            <Menu className="h-4 w-4" />
+          </button>
           {!collapsed && (
-            <div>
-              <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">lifetime dashboard</p>
-            </div>
+            <>
+              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
+                <p className="text-[10px] text-muted-foreground leading-none mt-0.5">lifetime dashboard</p>
+              </div>
+            </>
           )}
         </div>
 
         <NavLinks pathname={pathname} collapsed={collapsed} />
 
-        {/* Bottom bar */}
-        <div className={`px-2 py-3 border-t border-border flex items-center ${collapsed ? "justify-center" : "justify-between px-3"}`}>
-          {!collapsed && <ThemeToggle />}
-          <button
-            onClick={toggleCollapse}
-            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
-          {collapsed && <div className="mt-2"><ThemeToggle /></div>}
+        {/* Bottom bar — theme toggle only */}
+        <div className={`px-2 py-3 border-t border-border flex ${collapsed ? "justify-center" : "justify-start px-3"}`}>
+          <ThemeToggle />
         </div>
       </aside>
 
-      {/* Mobile hamburger button */}
+      {/* Mobile hamburger — fixed top-left */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-40 h-9 w-9 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-foreground shadow-sm"
+        className="md:hidden fixed top-3 left-3 z-40 h-9 w-9 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-foreground shadow-sm"
         aria-label="Open menu"
       >
         <Menu className="h-4 w-4" />
@@ -142,12 +140,10 @@ export function Nav() {
       {/* Mobile overlay drawer */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          {/* Drawer */}
           <aside className="relative w-64 bg-sidebar border-r border-border flex flex-col min-h-full shadow-2xl">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
               <div className="flex items-center gap-2.5">
