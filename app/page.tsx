@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import {
   Heart, Target, Activity, DollarSign,
-  BarChart2, LayoutDashboard, ChevronDown, X, Plus,
+  BarChart2, LayoutDashboard, ChevronDown, ChevronLeft, ChevronRight, X, Plus,
   AlignLeft, Tag, Calendar, Trash2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -165,41 +165,47 @@ function GlanceGrid({ mood, weeklyPct, workouts, moodAlert }: {
   );
 }
 
-// ─── Habit stack widget ───────────────────────────────────────────────────────
+// ─── Habit carousel ───────────────────────────────────────────────────────────
 
-function HabitStackWidget({ habits, initialLogs, onLog, isEvening }: {
+function HabitCarousel({ habits, initialLogs, onLog, isEvening }: {
   habits: Habit[];
   initialLogs: Map<number, string>;
   onLog: (id: number, status: "completed" | "skipped") => void;
   isEvening: boolean;
 }) {
-  const [loggedIds, setLoggedIds] = useState<Set<number>>(new Set(initialLogs.keys()));
-  const [exiting, setExiting] = useState<number | null>(null);
+  const [loggedMap, setLoggedMap] = useState<Map<number, string>>(new Map(initialLogs));
+  const [idx, setIdx] = useState(() => {
+    const first = habits.findIndex(h => !initialLogs.has(h.id));
+    return first >= 0 ? first : 0;
+  });
 
-  useEffect(() => {
-    setLoggedIds(new Set(initialLogs.keys()));
-  }, [initialLogs.size]);
+  useEffect(() => { setLoggedMap(new Map(initialLogs)); }, [initialLogs.size]);
 
   if (habits.length === 0) return null;
 
-  const pending = habits.filter(h => !loggedIds.has(h.id));
-  const doneCount = habits.length - pending.length;
-  const allDone = pending.length === 0;
-  const top = pending[0];
-  const C = top?.color ?? "#8b5cf6";
+  const habit = habits[idx];
+  const logStatus = loggedMap.get(habit.id);
+  const isDone = logStatus === "completed";
+  const isSkipped = logStatus === "skipped";
+  const doneCount = habits.filter(h => loggedMap.has(h.id)).length;
+  const allDone = doneCount === habits.length;
+  const C = habit.color;
 
-  function log(id: number, status: "completed" | "skipped") {
-    setExiting(id);
-    setTimeout(() => {
-      setLoggedIds(p => new Set([...p, id]));
-      setExiting(null);
-    }, 260);
-    onLog(id, status);
+  function log(status: "completed" | "skipped") {
+    setLoggedMap(p => new Map([...p, [habit.id, status]]));
+    onLog(habit.id, status);
+    // advance to next pending
+    const nextIdx = habits.findIndex((h, i) => i !== idx && !loggedMap.has(h.id) && h.id !== habit.id);
+    if (nextIdx >= 0) setIdx(nextIdx);
   }
 
+  function goTo(i: number) { setIdx(i); }
+  function prev() { setIdx((idx - 1 + habits.length) % habits.length); }
+  function next() { setIdx((idx + 1) % habits.length); }
+
   return (
-    <div className="space-y-2.5">
-      {/* Header row */}
+    <div className="space-y-2">
+      {/* Header */}
       <div className="flex items-center justify-between px-0.5">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Today's Habits</p>
         <div className="flex items-center gap-2.5">
@@ -216,87 +222,70 @@ function HabitStackWidget({ habits, initialLogs, onLog, isEvening }: {
         </div>
       </div>
 
-      {allDone ? (
-        /* All done state */
-        <div className="rounded-2xl border px-4 py-3.5 flex items-center gap-3"
-          style={{ backgroundColor: "#10b98108", borderColor: "#10b98128" }}>
-          <div className="h-7 w-7 rounded-xl flex items-center justify-center shrink-0"
-            style={{ backgroundColor: "#10b98120" }}>
-            <span className="text-sm">✓</span>
-          </div>
-          <p className="text-sm font-semibold" style={{ color: "#10b981" }}>All habits done for today</p>
-        </div>
-      ) : (
-        /* Card stack */
-        <div className="relative" style={{ height: 68 }}>
-          {/* Ghost cards behind (depth illusion) */}
-          {pending.slice(1, 3).map((h, idx) => {
-            const depth = idx + 1;
+      {/* Dot navigator */}
+      <div className="flex items-center gap-1.5 px-0.5">
+        <button onClick={prev}
+          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        <div className="flex gap-1.5 flex-1 justify-center items-center">
+          {habits.map((h, i) => {
+            const s = loggedMap.get(h.id);
+            const active = i === idx;
             return (
-              <div key={h.id} style={{
-                position: "absolute", inset: 0,
-                transform: `translateY(${depth * 6}px) scale(${1 - depth * 0.035})`,
-                zIndex: 3 - depth,
-                borderRadius: 16,
-                backgroundColor: `${h.color}07`,
-                border: `1px solid ${h.color}18`,
+              <button key={h.id} onClick={() => goTo(i)} style={{
+                width: active ? 20 : 8, height: 8, borderRadius: 4,
+                backgroundColor: s === "completed" ? h.color : s === "skipped" ? "#f59e0b" : active ? `${h.color}70` : "var(--muted)",
+                opacity: s || active ? 1 : 0.45,
+                transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
               }} />
             );
           })}
-
-          {/* Top card */}
-          {top && (
-            <div style={{
-              position: "absolute", inset: 0, zIndex: 10,
-              borderRadius: 16,
-              borderLeft: `3px solid ${C}`,
-              borderTop: `1px solid ${C}2a`,
-              borderRight: `1px solid ${C}2a`,
-              borderBottom: `1px solid ${C}2a`,
-              background: `linear-gradient(135deg, ${C}0c 0%, transparent 55%)`,
-              opacity: exiting === top.id ? 0 : 1,
-              transform: exiting === top.id ? "translateY(-10px) scale(0.97)" : "translateY(0) scale(1)",
-              transition: "opacity 0.22s ease, transform 0.22s ease",
-            }}
-              className="bg-card flex items-center gap-3 px-4"
-            >
-              {/* Color dot */}
-              <div className="h-2.5 w-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: C, outline: `2px solid ${C}30`, outlineOffset: 2 }} />
-
-              {/* Name + count */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold leading-tight truncate">{top.name}</p>
-                {pending.length > 1 && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{pending.length - 1} more</p>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => log(top.id, "skipped")}
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-lg hover:bg-muted/60"
-                >
-                  skip
-                </button>
-                <button
-                  onClick={() => log(top.id, "completed")}
-                  style={{
-                    backgroundColor: `${C}20`,
-                    color: C,
-                    border: `1px solid ${C}45`,
-                    boxShadow: `0 0 12px ${C}20`,
-                  }}
-                  className="flex items-center justify-center text-sm font-bold h-9 w-9 rounded-xl transition-all hover:scale-110 active:scale-95"
-                >
-                  ✓
-                </button>
-              </div>
-            </div>
-          )}
         </div>
-      )}
+        <button onClick={next}
+          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Habit card */}
+      <div style={{
+        borderLeft: `3px solid ${C}`,
+        borderTop: `1px solid ${C}25`,
+        borderRight: `1px solid ${C}25`,
+        borderBottom: `1px solid ${C}25`,
+        background: `linear-gradient(135deg, ${C}09 0%, transparent 55%)`,
+        borderRadius: 14,
+        transition: "border-color 0.2s ease, background 0.2s ease",
+      }}
+        className="bg-card flex items-center gap-3 px-4 py-3.5"
+      >
+        <div className="h-2.5 w-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: C, outline: `2px solid ${C}30`, outlineOffset: 2 }} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold truncate ${isDone ? "line-through text-muted-foreground" : isSkipped ? "text-muted-foreground" : ""}`}>
+            {habit.name}
+          </p>
+          {habit.biggerGoal && <p className="text-[10px] text-muted-foreground truncate">{habit.biggerGoal}</p>}
+        </div>
+        {isDone || isSkipped ? (
+          <span className={`shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full ${isDone ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+            {isDone ? "✓ done" : "✗ skipped"}
+          </span>
+        ) : (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => log("skipped")}
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-lg hover:bg-muted/60">
+              skip
+            </button>
+            <button onClick={() => log("completed")}
+              style={{ backgroundColor: `${C}20`, color: C, border: `1px solid ${C}45`, boxShadow: `0 0 10px ${C}18` }}
+              className="h-9 w-9 flex items-center justify-center text-sm font-bold rounded-xl transition-all hover:scale-110 active:scale-95">
+              ✓
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1103,9 +1092,9 @@ export default function DashboardPage() {
             {/* Glance grid */}
             <GlanceGrid mood={mood} weeklyPct={weeklyPct} workouts={workouts} moodAlert={isEvening && !mood}/>
 
-            {/* Habit stack */}
+            {/* Habit carousel */}
             {habits.length > 0 && (
-              <HabitStackWidget
+              <HabitCarousel
                 habits={habits}
                 initialLogs={todayHabitLogs}
                 onLog={logHabit}

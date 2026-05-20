@@ -3,7 +3,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, Plus, Flame, X, Trash2, BarChart2 } from "lucide-react";
+import { Check, Plus, Flame, X, Trash2 } from "lucide-react";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
 
 function localToday(): string {
   const d = new Date();
@@ -106,6 +109,196 @@ function Last30Dots({ logs, habit }: { logs: HabitLog[]; habit: Habit }) {
           />
         );
       })}
+    </div>
+  );
+}
+
+function HabitAnalyticsPanel({ habits, logs }: { habits: Habit[]; logs: HabitLog[] }) {
+  const [selected, setSelected] = useState<"all" | number>("all");
+
+  const selectedHabit = typeof selected === "number" ? habits.find(h => h.id === selected) ?? null : null;
+
+  // 30-day line data for "All" — daily aggregate completion %
+  const allChartData = useMemo(() => {
+    return Array.from({ length: 30 }, (_, i) => {
+      const date = dateMinusDays(today, 29 - i);
+      const done = habits.filter(h =>
+        logs.some(l => l.habitId === h.id && l.date === date && l.logStatus === "completed")
+      ).length;
+      return {
+        d: date.slice(5).replace("-", "/"),
+        pct: habits.length > 0 ? Math.round((done / habits.length) * 100) : 0,
+      };
+    });
+  }, [habits, logs]);
+
+  // All-habits aggregate stats (lifetime)
+  const allStats = useMemo(() => {
+    let completed = 0, skipped = 0, missed = 0;
+    habits.forEach(h => {
+      const s = computeStats(logs, h);
+      completed += s.completed; skipped += s.skipped; missed += s.missed;
+    });
+    const total = completed + skipped + missed;
+    return { completed, skipped, missed, total };
+  }, [habits, logs]);
+
+  // Single habit 30-day chart data (1 = done, 0 = not done)
+  const singleChartData = useMemo(() => {
+    if (!selectedHabit) return [];
+    return Array.from({ length: 30 }, (_, i) => {
+      const date = dateMinusDays(today, 29 - i);
+      const log = logs.find(l => l.habitId === selectedHabit.id && l.date === date);
+      return {
+        d: date.slice(5).replace("-", "/"),
+        v: log?.logStatus === "completed" ? 1 : 0,
+        s: log?.logStatus ?? "missed",
+      };
+    });
+  }, [selectedHabit, logs]);
+
+  const singleStats = selectedHabit ? computeStats(logs, selectedHabit) : null;
+  const singleStreak = selectedHabit ? computeStreak(logs, selectedHabit.id) : 0;
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Analytics</h2>
+
+      {/* Switcher pills */}
+      <div className="flex gap-1.5 flex-wrap">
+        <button
+          onClick={() => setSelected("all")}
+          className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+            selected === "all"
+              ? "bg-foreground text-background border-transparent"
+              : "text-muted-foreground border-border hover:text-foreground hover:border-foreground/30"
+          }`}
+        >
+          All
+        </button>
+        {habits.map(h => (
+          <button key={h.id}
+            onClick={() => setSelected(h.id)}
+            style={selected === h.id
+              ? { backgroundColor: h.color, color: "#fff", borderColor: "transparent" }
+              : { borderColor: `${h.color}40`, color: h.color }
+            }
+            className="px-3 py-1 rounded-full text-xs font-medium border transition-all hover:opacity-90"
+          >
+            {h.name}
+          </button>
+        ))}
+      </div>
+
+      {selected === "all" ? (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-5">
+          {/* Line chart */}
+          <div>
+            <p className="text-[11px] text-muted-foreground mb-3">Daily completion · last 30 days</p>
+            <ResponsiveContainer width="100%" height={130}>
+              <LineChart data={allChartData}>
+                <XAxis dataKey="d" tick={{ fontSize: 9 }} interval={6} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} unit="%" width={28} />
+                <Tooltip formatter={(v) => [`${v}%`, "Completion"]}
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                <Line type="monotone" dataKey="pct" stroke="#8b5cf6" dot={false} strokeWidth={2}
+                  activeDot={{ r: 4, fill: "#8b5cf6" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Aggregate stats */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "completed", val: allStats.completed, color: "#10b981", bg: "bg-emerald-500/10" },
+              { label: "skipped",   val: allStats.skipped,   color: "#f59e0b", bg: "bg-amber-500/10"  },
+              { label: "missed",    val: allStats.missed,    color: "#f43f5e", bg: "bg-rose-500/10"   },
+            ].map(({ label, val, color, bg }) => (
+              <div key={label} className={`${bg} rounded-lg py-3 text-center`}>
+                <p className="text-lg font-bold" style={{ color }}>{val}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: `${color}99` }}>{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Stacked bar */}
+          {allStats.total > 0 && (
+            <div className="space-y-1.5">
+              <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                <div className="h-full bg-emerald-500 rounded-l-full transition-all"
+                  style={{ width: `${(allStats.completed / allStats.total) * 100}%` }} />
+                <div className="h-full bg-amber-400 transition-all"
+                  style={{ width: `${(allStats.skipped / allStats.total) * 100}%` }} />
+                <div className="h-full bg-rose-500/50 rounded-r-full transition-all"
+                  style={{ width: `${(allStats.missed / allStats.total) * 100}%` }} />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {Math.round((allStats.completed / allStats.total) * 100)}% overall completion across all habits
+              </p>
+            </div>
+          )}
+        </div>
+      ) : selectedHabit && singleStats ? (
+        <div className="rounded-xl border bg-card p-4 space-y-5"
+          style={{ borderColor: `${selectedHabit.color}30` }}>
+          {/* Header */}
+          <div className="flex items-center gap-2">
+            <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: selectedHabit.color }} />
+            <p className="text-sm font-semibold flex-1 truncate">{selectedHabit.name}</p>
+            {singleStreak > 0 && (
+              <span className="flex items-center gap-1 text-xs font-semibold"
+                style={{ color: selectedHabit.color }}>
+                <Flame className="h-3.5 w-3.5" /> {singleStreak}-day streak
+              </span>
+            )}
+          </div>
+
+          {/* 30-day dot grid */}
+          <div className="space-y-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Last 30 days</p>
+            <Last30Dots logs={logs} habit={selectedHabit} />
+            <div className="flex gap-4 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-sm inline-block" style={{ backgroundColor: selectedHabit.color }} />done
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-sm inline-block bg-amber-400" />skipped
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-sm inline-block bg-muted opacity-50" />missed
+              </span>
+            </div>
+          </div>
+
+          {/* Stat row */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "completed", val: singleStats.completed, color: "#10b981", bg: "bg-emerald-500/10" },
+              { label: "skipped",   val: singleStats.skipped,   color: "#f59e0b", bg: "bg-amber-500/10"  },
+              { label: "missed",    val: singleStats.missed,    color: "#f43f5e", bg: "bg-rose-500/10"   },
+            ].map(({ label, val, color, bg }) => (
+              <div key={label} className={`${bg} rounded-lg py-2.5 text-center`}>
+                <p className="text-lg font-bold" style={{ color }}>{val}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: `${color}99` }}>{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Stacked bar */}
+          {singleStats.total > 0 && (
+            <div className="space-y-1">
+              <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                <div className="h-full rounded-l-full transition-all" style={{ backgroundColor: selectedHabit.color, width: `${(singleStats.completed / singleStats.total) * 100}%` }} />
+                <div className="h-full bg-amber-400 transition-all" style={{ width: `${(singleStats.skipped / singleStats.total) * 100}%` }} />
+                <div className="h-full bg-rose-500/40 rounded-r-full transition-all" style={{ width: `${(singleStats.missed / singleStats.total) * 100}%` }} />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {singleStats.completionRate}% completion · {singleStats.skipRate}% skipped
+              </p>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -354,84 +547,7 @@ export default function HabitsPage() {
 
       {/* ── Analytics ── */}
       {!loading && habits.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <BarChart2 className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Analytics</h2>
-          </div>
-
-          <div className="space-y-3">
-            {habits.map(habit => {
-              const stats = computeStats(logs, habit);
-              const streak = computeStreak(logs, habit.id);
-              const freqLabel = FREQ_OPTIONS.find(f => f.days === habit.targetDaysPerWeek)?.label ?? "Daily";
-
-              return (
-                <div key={habit.id} className="rounded-xl border border-border bg-card p-4 space-y-4">
-
-                  {/* Header */}
-                  <div className="flex items-center gap-2">
-                    <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: habit.color }} />
-                    <p className="text-sm font-semibold flex-1 min-w-0 truncate">{habit.name}</p>
-                    {habit.biggerGoal && (
-                      <span className="text-[11px] text-muted-foreground truncate max-w-[120px]">{habit.biggerGoal}</span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground shrink-0">{freqLabel}</span>
-                  </div>
-
-                  {/* Stat boxes */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="text-center rounded-lg py-2.5 bg-emerald-500/10">
-                      <p className="text-lg font-bold text-emerald-400">{stats.completed}</p>
-                      <p className="text-[10px] text-emerald-400/70 mt-0.5">completed</p>
-                    </div>
-                    <div className="text-center rounded-lg py-2.5 bg-amber-500/10">
-                      <p className="text-lg font-bold text-amber-400">{stats.skipped}</p>
-                      <p className="text-[10px] text-amber-400/70 mt-0.5">skipped</p>
-                    </div>
-                    <div className="text-center rounded-lg py-2.5 bg-rose-500/10">
-                      <p className="text-lg font-bold text-rose-400">{stats.missed}</p>
-                      <p className="text-[10px] text-rose-400/70 mt-0.5">missed</p>
-                    </div>
-                  </div>
-
-                  {/* Stacked completion bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-muted-foreground">{stats.completionRate}% completion · {stats.skipRate}% skipped</span>
-                      {streak > 0 && (
-                        <span className="flex items-center gap-0.5 font-medium" style={{ color: habit.color }}>
-                          <Flame className="h-3 w-3" /> {streak}-day streak
-                        </span>
-                      )}
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden flex">
-                      {stats.total > 0 && <>
-                        <div className="h-full bg-emerald-500 transition-all rounded-l-full"
-                          style={{ width: `${(stats.completed / stats.total) * 100}%` }} />
-                        <div className="h-full bg-amber-400 transition-all"
-                          style={{ width: `${(stats.skipped / stats.total) * 100}%` }} />
-                        <div className="h-full bg-rose-500/40 transition-all rounded-r-full"
-                          style={{ width: `${(stats.missed / stats.total) * 100}%` }} />
-                      </>}
-                    </div>
-                    <div className="flex gap-3 text-[10px] text-muted-foreground">
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />done</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />skipped</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500/40 inline-block" />missed</span>
-                    </div>
-                  </div>
-
-                  {/* 30-day dot history */}
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Last 30 days</p>
-                    <Last30Dots logs={logs} habit={habit} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <HabitAnalyticsPanel habits={habits} logs={logs} />
       )}
     </div>
   );
