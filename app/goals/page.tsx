@@ -189,20 +189,28 @@ function ProjectCard({ project, onDeleted }: { project: Project; onDeleted: (id:
 
 function parseImport(raw: string): { goal: string; tasks: { title: string; priority?: string }[] } | null {
   raw = raw.trim();
+  if (!raw) return null;
   // Try JSON
   try {
     const parsed = JSON.parse(raw);
-    if (parsed.goal && Array.isArray(parsed.tasks)) return parsed;
+    if (parsed.goal && Array.isArray(parsed.tasks) && parsed.tasks.length > 0) return parsed;
   } catch {}
-  // Try markdown: # Project\n- [ ] Task or - Task
+  // Flexible text/markdown: handles # headings, *, -, numbered lists
   const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  const titleLine = lines.find((l) => l.startsWith("#"));
-  if (!titleLine) return null;
-  const goal = titleLine.replace(/^#+\s*/, "");
+  // Title: first # heading, or very first line
+  const headingLine = lines.find((l) => /^#{1,3}\s/.test(l));
+  const goal = (headingLine ?? lines[0]).replace(/^#{1,3}\s*/, "").trim();
+  // Tasks: - bullets, * bullets, numbered (1. / 1)) — skip heading lines
   const tasks = lines
-    .filter((l) => l.startsWith("- "))
-    .map((l) => ({ title: l.replace(/^-\s*(\[\s*[x ]?\s*\]\s*)?/, "").trim() }))
-    .filter((t) => t.title);
+    .filter((l) => /^[-*]\s/.test(l) || /^\d+[.)]\s/.test(l))
+    .map((l) => ({
+      title: l
+        .replace(/^[-*]\s*(\[[ x]?\]\s*)?/, "")
+        .replace(/^\d+[.)]\s*/, "")
+        .replace(/\*\*/g, "")
+        .trim(),
+    }))
+    .filter((t) => t.title.length > 0);
   return tasks.length > 0 ? { goal, tasks } : null;
 }
 
@@ -211,41 +219,62 @@ function ImportModal({ onImported, onClose }: { onImported: (p: Project) => void
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const preview = text.trim() ? parseImport(text) : null;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = parseImport(text);
-    if (!parsed) { setError("Could not parse. Use JSON {goal, tasks[]} or Markdown # Title\\n- task"); return; }
+    if (!preview) { setError("Could not detect a goal title + task list. See accepted formats below."); return; }
     setSaving(true);
-    const res = await fetch("/api/goals/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed),
-    });
-    const data = await res.json();
-    onImported({ ...data.project, totalIssues: data.issues.length, doneIssues: 0 });
-    onClose();
+    try {
+      const res = await fetch("/api/goals/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(preview),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Server error — try again."); setSaving(false); return; }
+      onImported({ ...data.project, totalIssues: data.issues.length, doneIssues: 0 });
+      onClose();
+    } catch {
+      setError("Network error — check your connection.");
+      setSaving(false);
+    }
   }
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">Import from AI agent</p>
+        <p className="text-sm font-semibold">Import project</p>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Paste JSON <code className="bg-muted px-1 rounded">{"{ goal, tasks[] }"}</code> or Markdown <code className="bg-muted px-1 rounded"># Title\n- task</code>
-      </p>
+
       <form onSubmit={submit} className="space-y-3">
         <Textarea
           value={text}
           onChange={(e) => { setText(e.target.value); setError(""); }}
-          placeholder={'# My Goal\n- Task 1\n- Task 2\n\nor\n\n{"goal":"My Goal","tasks":[{"title":"Task 1"}]}'}
-          className="font-mono text-xs min-h-[140px]"
+          placeholder={"Paste AI output, markdown, or JSON. Accepted formats:\n\n# Project name\n- Task one\n- Task two\n1. Task three\n\nor {\"goal\":\"...\",\"tasks\":[{\"title\":\"...\"}]}"}
+          className="font-mono text-xs min-h-[160px]"
           autoFocus
         />
+
+        {/* Live parse preview */}
+        {text.trim() && (
+          <div className={`rounded-lg px-3 py-2.5 text-xs space-y-0.5 border ${preview ? "bg-emerald-500/8 border-emerald-500/20" : "bg-rose-500/8 border-rose-500/20"}`}>
+            {preview ? (
+              <>
+                <p className="font-semibold text-emerald-400">✓ Ready to import</p>
+                <p className="text-muted-foreground">Goal: <span className="text-foreground font-medium">{preview.goal}</span></p>
+                <p className="text-muted-foreground">{preview.tasks.length} ticket{preview.tasks.length !== 1 ? "s" : ""} detected</p>
+              </>
+            ) : (
+              <p className="text-rose-400">Could not detect a goal + tasks. Use <code className="bg-muted px-1 rounded"># Title</code> and <code className="bg-muted px-1 rounded">- tasks</code> or numbered lists.</p>
+            )}
+          </div>
+        )}
+
         {error && <p className="text-xs text-rose-400">{error}</p>}
-        <Button type="submit" size="sm" className="w-full" disabled={saving || !text.trim()}>
-          {saving ? "Importing..." : "Create project from this"}
+        <Button type="submit" size="sm" className="w-full" disabled={saving || !preview}>
+          {saving ? "Importing..." : `Create project${preview ? ` (${preview.tasks.length} tickets)` : ""}`}
         </Button>
       </form>
     </div>

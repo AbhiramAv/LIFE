@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import {
   Heart, Target, Activity, DollarSign,
-  BarChart2, LayoutDashboard, ChevronDown, ChevronLeft, ChevronRight, X, Plus,
+  BarChart2, LayoutDashboard, ChevronDown, X, Plus,
   AlignLeft, Tag, Calendar, Trash2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -200,8 +200,6 @@ function HabitCarousel({ habits, initialLogs, onLog, isEvening }: {
   }
 
   function goTo(i: number) { setIdx(i); }
-  function prev() { setIdx((idx - 1 + habits.length) % habits.length); }
-  function next() { setIdx((idx + 1) % habits.length); }
 
   return (
     <div className="space-y-2">
@@ -222,30 +220,32 @@ function HabitCarousel({ habits, initialLogs, onLog, isEvening }: {
         </div>
       </div>
 
-      {/* Dot navigator */}
-      <div className="flex items-center gap-1.5 px-0.5">
-        <button onClick={prev}
-          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <div className="flex gap-1.5 flex-1 justify-center items-center">
-          {habits.map((h, i) => {
-            const s = loggedMap.get(h.id);
-            const active = i === idx;
-            return (
-              <button key={h.id} onClick={() => goTo(i)} style={{
-                width: active ? 20 : 8, height: 8, borderRadius: 4,
-                backgroundColor: s === "completed" ? h.color : s === "skipped" ? "#f59e0b" : active ? `${h.color}70` : "var(--muted)",
-                opacity: s || active ? 1 : 0.45,
-                transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
-              }} />
-            );
-          })}
-        </div>
-        <button onClick={next}
-          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0">
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
+      {/* Name pill navigator */}
+      <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+        {habits.map((h, i) => {
+          const s = loggedMap.get(h.id);
+          const active = i === idx;
+          return (
+            <button key={h.id} onClick={() => goTo(i)}
+              style={active
+                ? { backgroundColor: `${h.color}18`, color: h.color, borderColor: `${h.color}45` }
+                : s === "completed"
+                  ? { borderColor: `${h.color}35`, color: `${h.color}90` }
+                  : s === "skipped"
+                    ? { borderColor: "#f59e0b30", color: "#f59e0b80" }
+                    : undefined
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border shrink-0 transition-all ${
+                active ? "border" : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
+              }`}
+            >
+              {s === "completed" && <span className="text-[9px]" style={{ color: h.color }}>✓</span>}
+              {s === "skipped"   && <span className="text-[9px] text-amber-400">✗</span>}
+              <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: h.color, opacity: s ? 1 : 0.5 }} />
+              <span className="max-w-[72px] truncate">{h.name}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Habit card */}
