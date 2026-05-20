@@ -226,6 +226,59 @@ function StatusGroup({
   );
 }
 
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  const out: React.ReactNode[] = [];
+  let listItems: string[] = [];
+  let key = 0;
+
+  function renderInline(s: string): React.ReactNode {
+    const parts = s.split(/(\*\*[^*]+\*\*)/g);
+    if (parts.length === 1) return s;
+    return parts.map((p, i) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? <strong key={i} className="font-semibold text-foreground">{p.slice(2, -2)}</strong>
+        : p
+    );
+  }
+
+  function flushList() {
+    if (!listItems.length) return;
+    out.push(
+      <ul key={key++} className="space-y-1 ml-1">
+        {listItems.map((item, i) => (
+          <li key={i} className="flex gap-2 text-sm text-foreground/75">
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-foreground/35 shrink-0" />
+            <span>{renderInline(item)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  }
+
+  for (const line of lines) {
+    if (line.startsWith("- ")) {
+      listItems.push(line.slice(2));
+    } else {
+      flushList();
+      if (!line.trim()) {
+        if (out.length) out.push(<div key={key++} className="h-2" />);
+      } else {
+        out.push(
+          <p key={key++} className="text-sm text-foreground/75 leading-relaxed">
+            {renderInline(line)}
+          </p>
+        );
+      }
+    }
+  }
+  flushList();
+  return <div className="space-y-0.5">{out}</div>;
+}
+
 // ─── Issue detail dialog ───────────────────────────────────────────────────────
 
 function IssueDetailDialog({
@@ -244,6 +297,7 @@ function IssueDetailDialog({
   const [priority, setPriority] = useState<IssuePriority>("none");
   const [label, setLabel] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [editingDesc, setEditingDesc] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -253,8 +307,9 @@ function IssueDetailDialog({
       setPriority(issue.priority);
       setLabel(issue.label ?? "");
       setDueDate(issue.dueDate ?? "");
+      setEditingDesc(false);
     }
-  }, [issue]);
+  }, [issue?.id]);
 
   if (!issue) return null;
 
@@ -278,70 +333,102 @@ function IssueDetailDialog({
   }
 
   const statusCfg = STATUS_CONFIG[issue.status];
+  const priCfg = PRIORITY_CONFIG[priority];
 
   return (
     <Dialog open={!!issue} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
         <DialogHeader>
-          <DialogTitle className="sr-only">Issue detail</DialogTitle>
+          <DialogTitle className="sr-only">Ticket detail</DialogTitle>
         </DialogHeader>
 
-        {/* Status badge + delete */}
-        <div className="flex items-center justify-between mb-1">
+        {/* Top bar: status + badges (close X is rendered by DialogContent) */}
+        <div className="flex items-center gap-2 flex-wrap px-5 pt-5 pb-3 pr-10">
           <span
-            className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full"
-            style={{ backgroundColor: `${statusCfg.color}22`, color: statusCfg.color }}
+            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md"
+            style={{ background: `${statusCfg.color}20`, color: statusCfg.color }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusCfg.color }} />
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusCfg.color }} />
             {statusCfg.label}
           </span>
-          <button
-            onClick={handleDelete}
-            className="text-muted-foreground hover:text-rose-400 transition-colors p-1 rounded"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {priority !== "none" && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md bg-muted/60" style={{ color: priCfg.color }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: priCfg.color }} />
+              {priCfg.label}
+            </span>
+          )}
+          {label && (
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-muted/60 text-muted-foreground border border-border/60">
+              {label}
+            </span>
+          )}
         </div>
 
         {/* Title */}
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => { if (title.trim() && title !== issue.title) save({ title: title.trim() }); }}
-          className="text-base font-semibold border-none px-0 focus-visible:ring-0 shadow-none"
-          placeholder="Ticket title..."
-        />
-
-        {/* Description */}
-        <div className="flex items-start gap-2 mt-1">
-          <AlignLeft className="h-4 w-4 text-muted-foreground mt-1.5 shrink-0" />
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onBlur={() => { if (description !== (issue.description ?? "")) save({ description: description || null }); }}
-            placeholder="Add a description..."
-            className="resize-none border-none px-0 focus-visible:ring-0 shadow-none text-sm min-h-[80px]"
+        <div className="px-5 pb-3">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => { if (title.trim() && title !== issue.title) save({ title: title.trim() }); }}
+            className="text-[17px] font-bold border-none px-0 focus-visible:ring-0 shadow-none h-auto leading-snug"
+            placeholder="Ticket title..."
           />
         </div>
 
-        {/* Metadata row */}
-        <div className="grid grid-cols-2 gap-3 mt-2">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Flag className="h-3.5 w-3.5" /> Priority
-            </div>
-            <Select
-              value={priority}
-              onValueChange={(v) => { setPriority(v as IssuePriority); save({ priority: v as IssuePriority }); }}
+        <div className="h-px bg-border mx-0" />
+
+        {/* Description */}
+        <div className="px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+            <AlignLeft className="h-3.5 w-3.5" /> Description
+          </p>
+          {editingDesc ? (
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => {
+                setEditingDesc(false);
+                if (description !== (issue.description ?? "")) save({ description: description || null });
+              }}
+              autoFocus
+              placeholder="Add a description..."
+              className="resize-none text-sm min-h-[120px]"
+            />
+          ) : (
+            <div
+              onClick={() => setEditingDesc(true)}
+              className="min-h-[60px] cursor-text rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors -mx-3"
             >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
+              {description
+                ? renderMarkdown(description)
+                : <p className="text-sm text-muted-foreground/50 italic">Add a description...</p>
+              }
+            </div>
+          )}
+        </div>
+
+        <div className="h-px bg-border mx-0" />
+
+        {/* Metadata */}
+        <div className="px-5 py-4 grid grid-cols-3 gap-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Flag className="h-3 w-3" /> Priority
+            </p>
+            <Select value={priority} onValueChange={(v) => { setPriority(v as IssuePriority); save({ priority: v as IssuePriority }); }}>
+              <SelectTrigger className="h-8 text-xs bg-muted/30 border-border/50">
+                <SelectValue>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: priCfg.color }} />
+                    {priCfg.label}
+                  </span>
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {(Object.keys(PRIORITY_CONFIG) as IssuePriority[]).map((p) => (
                   <SelectItem key={p} value={p} className="text-xs">
                     <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: PRIORITY_CONFIG[p].color }} />
+                      <span className="h-2 w-2 rounded-full" style={{ background: PRIORITY_CONFIG[p].color }} />
                       {PRIORITY_CONFIG[p].label}
                     </span>
                   </SelectItem>
@@ -350,34 +437,46 @@ function IssueDetailDialog({
             </Select>
           </div>
 
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar className="h-3.5 w-3.5" /> Due date
-            </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Tag className="h-3 w-3" /> Label
+            </p>
+            <Input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onBlur={() => save({ label: label || null })}
+              placeholder="None"
+              className="h-8 text-xs bg-muted/30 border-border/50"
+            />
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> Due date
+            </p>
             <Input
               type="date"
               value={dueDate}
-              className="h-8 text-xs"
+              className="h-8 text-xs bg-muted/30 border-border/50"
               onChange={(e) => setDueDate(e.target.value)}
               onBlur={() => save({ dueDate: dueDate || null })}
             />
           </div>
         </div>
 
-        <div className="space-y-1 mt-1">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Tag className="h-3.5 w-3.5" /> Label
-          </div>
-          <Input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            onBlur={() => save({ label: label || null })}
-            placeholder="e.g. bug, feature, docs..."
-            className="h-8 text-xs"
-          />
+        {/* Footer: save indicator + delete */}
+        <div className="px-5 pb-5 flex items-center justify-between">
+          {saving
+            ? <p className="text-xs text-muted-foreground">Saving...</p>
+            : <span />
+          }
+          <button
+            onClick={handleDelete}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-rose-400 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete ticket
+          </button>
         </div>
-
-        {saving && <p className="text-xs text-muted-foreground mt-1">Saving...</p>}
       </DialogContent>
     </Dialog>
   );

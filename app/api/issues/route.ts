@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
       id: issues.id,
       projectId: issues.projectId,
       title: issues.title,
+      description: issues.description,
       status: issues.status,
       priority: issues.priority,
       label: issues.label,

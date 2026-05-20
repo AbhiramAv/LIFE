@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, issues } from "@/lib/db";
 import { eq } from "drizzle-orm";
 
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [issue] = await db.select().from(issues).where(eq(issues.id, parseInt(id)));
+  if (!issue) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(issue);
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json();

@@ -8,22 +8,27 @@ import {
 import {
   Heart, Target, Activity, DollarSign,
   BarChart2, LayoutDashboard, ChevronDown, X, Plus,
+  AlignLeft, Tag, Calendar, Trash2,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { type IssueStatus } from "@/lib/types/goals";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AnyIssue = {
   id: number; projectId: number; title: string;
-  status: string; projectTitle: string; projectColor: string;
+  description: string | null;
+  status: string; priority: string; label: string | null; dueDate: string | null;
+  projectTitle: string; projectColor: string;
   inSprint: boolean; completedAt: string | null; createdAt: string;
 };
 type HabitLogDay = { date: string; completed: number };
 type WorkoutDay  = { date: string };
 type Habit       = { id: number; name: string; biggerGoal: string | null; color: string; targetDaysPerWeek: number };
-type HabitLog    = { habitId: number; date: string; completed: boolean; logStatus: string };
 type WeekCount   = { habitId: number; doneThisWeek: number };
-type PendingDone = { type: "issue" | "habit"; id: number };
+type PendingDone = { id: number };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -91,9 +96,9 @@ function HoverCard({ color, children, className = "", onClick }: {
 
 // ─── Glance grid ─────────────────────────────────────────────────────────────
 
-function GlanceGrid({ mood, doneToday, totalHabits, workouts }: {
+function GlanceGrid({ mood, weeklyPct, workouts }: {
   mood: { moodScore: number } | null;
-  doneToday: number; totalHabits: number;
+  weeklyPct: number | null;
   workouts: WorkoutDay[];
 }) {
   const today = localToday();
@@ -107,8 +112,8 @@ function GlanceGrid({ mood, doneToday, totalHabits, workouts }: {
     },
     {
       href: "/habits", label: "Habits", icon: Target, color: "#8b5cf6",
-      value: totalHabits === 0 ? "—" : `${doneToday}/${totalHabits}`,
-      sub: totalHabits === 0 ? "no habits yet" : "done today",
+      value: weeklyPct === null ? "—" : `${weeklyPct}%`,
+      sub: weeklyPct === null ? "no habits yet" : "this week",
     },
     {
       href: "/fitness", label: "Fitness", icon: Activity, color: "#10b981",
@@ -146,8 +151,7 @@ function GlanceGrid({ mood, doneToday, totalHabits, workouts }: {
 
 // ─── Done confirmation modal ──────────────────────────────────────────────────
 
-function DoneModal({ pending, onConfirm, onCancel }: {
-  pending: PendingDone;
+function DoneModal({ onConfirm, onCancel }: {
   onConfirm: (choice: "completed" | "cancelled") => void;
   onCancel: () => void;
 }) {
@@ -156,19 +160,17 @@ function DoneModal({ pending, onConfirm, onCancel }: {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative bg-card border border-border rounded-2xl p-5 shadow-2xl space-y-3 w-64"
         style={{ boxShadow: "0 24px 60px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)" }}>
-        <p className="text-sm font-semibold text-center">
-          {pending.type === "habit" ? "How'd it go?" : "Mark ticket as…"}
-        </p>
+        <p className="text-sm font-semibold text-center">Mark ticket as…</p>
         <div className="flex gap-2">
           <button onClick={() => onConfirm("completed")}
             className="flex-1 text-xs font-semibold py-2.5 rounded-xl border transition-all hover:-translate-y-0.5"
             style={{ backgroundColor:"#10b98115", color:"#10b981", borderColor:"#10b98135" }}>
-            ✓ {pending.type === "habit" ? "Done" : "Completed"}
+            ✓ Completed
           </button>
           <button onClick={() => onConfirm("cancelled")}
             className="flex-1 text-xs font-semibold py-2.5 rounded-xl border transition-all hover:-translate-y-0.5"
             style={{ backgroundColor:"#f43f5e15", color:"#f43f5e", borderColor:"#f43f5e35" }}>
-            ✕ {pending.type === "habit" ? "Skipped" : "Cancelled"}
+            ✕ Cancelled
           </button>
         </div>
         <button onClick={onCancel} className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
@@ -385,10 +387,225 @@ const STATUS_TAG: Record<string,{label:string;color:string}> = {
   done:{label:"done",color:"#10b981"}, cancelled:{label:"cancelled",color:"#f43f5e"},
   skipped:{label:"skipped",color:"#f59e0b"}, completed:{label:"done",color:"#10b981"}, missed:{label:"missed",color:"#6b7280"},
 };
-type DragInfo = { type: "issue"|"habit"; id: number };
+type DragInfo = { id: number };
 
-function IssueCard({ issue, onDragStart, onDragEnd }: {
-  issue: AnyIssue; onDragStart:()=>void; onDragEnd:()=>void;
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+
+function renderMarkdown(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  const out: React.ReactNode[] = [];
+  let listItems: string[] = [];
+  let key = 0;
+
+  function renderInline(s: string): React.ReactNode {
+    const parts = s.split(/(\*\*[^*]+\*\*)/g);
+    if (parts.length === 1) return s;
+    return parts.map((p, i) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? <strong key={i} className="font-semibold text-foreground">{p.slice(2, -2)}</strong>
+        : p
+    );
+  }
+
+  function flushList() {
+    if (!listItems.length) return;
+    out.push(
+      <ul key={key++} className="space-y-1 ml-1">
+        {listItems.map((item, i) => (
+          <li key={i} className="flex gap-2 text-sm text-foreground/75">
+            <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-foreground/35 shrink-0" />
+            <span>{renderInline(item)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  }
+
+  for (const line of lines) {
+    if (line.startsWith("- ")) {
+      listItems.push(line.slice(2));
+    } else {
+      flushList();
+      if (!line.trim()) {
+        if (out.length) out.push(<div key={key++} className="h-2" />);
+      } else {
+        out.push(
+          <p key={key++} className="text-sm text-foreground/75 leading-relaxed">
+            {renderInline(line)}
+          </p>
+        );
+      }
+    }
+  }
+  flushList();
+  return <div className="space-y-0.5">{out}</div>;
+}
+
+// ─── Dashboard ticket detail dialog ───────────────────────────────────────────
+
+function DashboardTicketDialog({
+  issue,
+  onClose,
+  onUpdate,
+  onDelete,
+}: {
+  issue: AnyIssue | null;
+  onClose: () => void;
+  onUpdate: (id: number, patch: Partial<AnyIssue>) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [label, setLabel] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (issue) {
+      setTitle(issue.title);
+      setDescription(issue.description ?? "");
+      setLabel(issue.label ?? "");
+      setDueDate(issue.dueDate ?? "");
+      setEditingDesc(false);
+    }
+  }, [issue?.id]);
+
+  if (!issue) return null;
+
+  const C = issue.projectColor;
+  const statusColor = STATUS_TAG[issue.status]?.color ?? "#6b7280";
+  const statusLabel = STATUS_TAG[issue.status]?.label ?? issue.status;
+
+  async function save(field: Partial<AnyIssue>) {
+    if (!issue) return;
+    setSaving(true);
+    await fetch(`/api/issues/${issue.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(field),
+    });
+    onUpdate(issue.id, field);
+    setSaving(false);
+  }
+
+  async function handleDelete() {
+    if (!issue) return;
+    await fetch(`/api/issues/${issue.id}`, { method: "DELETE" });
+    onDelete(issue.id);
+    onClose();
+  }
+
+  return (
+    <Dialog open={!!issue} onOpenChange={onClose}>
+      <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="sr-only">Ticket detail</DialogTitle>
+        </DialogHeader>
+
+        {/* Top bar (close X rendered by DialogContent) */}
+        <div className="flex items-center gap-2 flex-wrap px-5 pt-5 pb-3 pr-10">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md"
+            style={{ background: `${statusColor}20`, color: statusColor }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />
+            {statusLabel}
+          </span>
+          <span className="text-xs font-medium px-2.5 py-1 rounded-md"
+            style={{ background: `${C}20`, color: C }}>
+            {issue.projectTitle}
+          </span>
+          {label && (
+            <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-muted/60 text-muted-foreground border border-border/60">
+              {label}
+            </span>
+          )}
+        </div>
+
+        {/* Title */}
+        <div className="px-5 pb-3">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => { if (title.trim() && title !== issue.title) save({ title: title.trim() }); }}
+            className="text-[17px] font-bold border-none px-0 focus-visible:ring-0 shadow-none h-auto leading-snug"
+            placeholder="Ticket title..."
+          />
+        </div>
+
+        <div className="h-px bg-border" />
+
+        {/* Description */}
+        <div className="px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+            <AlignLeft className="h-3.5 w-3.5" /> Description
+          </p>
+          {editingDesc ? (
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => {
+                setEditingDesc(false);
+                if (description !== (issue.description ?? "")) save({ description: description || null });
+              }}
+              autoFocus
+              placeholder="Add a description..."
+              className="resize-none text-sm min-h-[120px]"
+            />
+          ) : (
+            <div onClick={() => setEditingDesc(true)}
+              className="min-h-[60px] cursor-text rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors -mx-3">
+              {description
+                ? renderMarkdown(description)
+                : <p className="text-sm text-muted-foreground/50 italic">Add a description...</p>
+              }
+            </div>
+          )}
+        </div>
+
+        <div className="h-px bg-border" />
+
+        {/* Metadata */}
+        <div className="px-5 py-4 grid grid-cols-2 gap-5">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Tag className="h-3 w-3" /> Label
+            </p>
+            <Input value={label} onChange={(e) => setLabel(e.target.value)}
+              onBlur={() => save({ label: label || null })}
+              placeholder="None" className="h-8 text-xs bg-muted/30 border-border/50" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> Due date
+            </p>
+            <Input type="date" value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              onBlur={() => save({ dueDate: dueDate || null })}
+              className="h-8 text-xs bg-muted/30 border-border/50" />
+          </div>
+        </div>
+
+        {/* Footer: save indicator + delete */}
+        <div className="px-5 pb-5 flex items-center justify-between">
+          {saving
+            ? <p className="text-xs text-muted-foreground">Saving...</p>
+            : <span />
+          }
+          <button onClick={handleDelete}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-rose-400 transition-colors">
+            <Trash2 className="h-3.5 w-3.5" /> Delete ticket
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Issue card ───────────────────────────────────────────────────────────────
+
+function IssueCard({ issue, onDragStart, onDragEnd, onClick }: {
+  issue: AnyIssue; onDragStart:()=>void; onDragEnd:()=>void; onClick:()=>void;
 }) {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
@@ -396,7 +613,7 @@ function IssueCard({ issue, onDragStart, onDragEnd }: {
   const [hov, setHov] = useState(false);
 
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{
         borderTopColor: hov ? `${C}55` : `${C}28`,
@@ -421,61 +638,15 @@ function IssueCard({ issue, onDragStart, onDragEnd }: {
   );
 }
 
-function HabitCard({ habit, weekDone, alreadyDoneToday, onRequestDone, onDragStart, onDragEnd }: {
-  habit: Habit; weekDone: number; alreadyDoneToday: boolean;
-  onRequestDone:()=>void; onDragStart:()=>void; onDragEnd:()=>void;
-}) {
-  const remaining = habit.targetDaysPerWeek - weekDone;
-  const doneForWeek = remaining <= 0;
-  const C = biggerGoalColor(habit.biggerGoal, habit.color);
-  const [hov, setHov] = useState(false);
-
-  return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
-      onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
-      style={{
-        borderTopColor: hov ? `${C}55` : `${C}28`,
-        borderRightColor: hov ? `${C}55` : `${C}28`,
-        borderBottomColor: hov ? `${C}55` : `${C}28`,
-        borderLeftColor: C, borderLeftWidth: 3,
-        boxShadow: hov ? `0 8px 24px -4px ${C}28, 0 0 0 1px ${C}20` : `0 1px 4px ${C}10`,
-        transform: hov ? "translateY(-2px)" : "translateY(0)",
-        background: hov ? `linear-gradient(135deg, ${C}08, transparent)` : undefined,
-        transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
-      }}
-      className="rounded-xl border bg-card p-3 space-y-2.5 cursor-grab active:cursor-grabbing select-none"
-    >
-      <p className={`text-xs font-medium leading-snug ${doneForWeek ? "line-through text-muted-foreground" : ""}`}>
-        {habit.biggerGoal ?? habit.name}
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-          style={{backgroundColor:`${C}20`,color:C}}>{habit.name}</span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {doneForWeek ? (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{backgroundColor:"#10b98120",color:"#10b981"}}>done ✓</span>
-          ) : alreadyDoneToday ? (
-            <span className="text-[10px] text-muted-foreground">✓ today · {remaining}× left</span>
-          ) : (
-            <span className="text-[10px] text-muted-foreground">{remaining}× left</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type BoardCard = {kind:"issue";issue:AnyIssue} | {kind:"habit";habit:Habit};
 const COL_STATUS: Record<string,string> = {todo:"todo",in_progress:"in_progress",done:"done"};
 
-function KanbanColumn({ title, color, columnKey, cards, weekCounts, todayLogs, onRequestDone, onStatusChange, dragging, setDragging }: {
-  title:string; color:string; columnKey:string; cards:BoardCard[];
-  weekCounts:Record<number,number>; todayLogs:HabitLog[];
+function KanbanColumn({ title, color, columnKey, issues, onRequestDone, onStatusChange, onIssueClick, dragging, setDragging }: {
+  title:string; color:string; columnKey:string; issues:AnyIssue[];
   onRequestDone:(p:PendingDone)=>void; onStatusChange:(id:number,s:string)=>void;
+  onIssueClick:(issue:AnyIssue)=>void;
   dragging:DragInfo|null; setDragging:(d:DragInfo|null)=>void;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const today = localToday();
 
   return (
     <div
@@ -491,37 +662,25 @@ function KanbanColumn({ title, color, columnKey, cards, weekCounts, todayLogs, o
       onDrop={()=>{
         setDragOver(false);
         if (!dragging) return;
-        if (dragging.type==="issue" && columnKey==="done") onRequestDone({type:"issue",id:dragging.id});
-        else if (dragging.type==="issue") onStatusChange(dragging.id, COL_STATUS[columnKey]??"todo");
-        else if (dragging.type==="habit" && columnKey==="done") onRequestDone({type:"habit",id:dragging.id});
+        if (columnKey==="done") onRequestDone({id:dragging.id});
+        else onStatusChange(dragging.id, COL_STATUS[columnKey]??"todo");
         setDragging(null);
       }}
     >
       <div className="flex items-center gap-2 pb-1.5 px-1 border-b" style={{borderColor:`${color}25`}}>
         <div className="h-2 w-2 rounded-full shrink-0" style={{backgroundColor:color}} />
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
-        <span className="ml-auto text-xs font-medium" style={{color:`${color}cc`}}>{cards.length}</span>
+        <span className="ml-auto text-xs font-medium" style={{color:`${color}cc`}}>{issues.length}</span>
       </div>
       <div className="space-y-2 pt-1">
-        {cards.map(card => {
-          if (card.kind==="issue") return (
-            <IssueCard key={`i-${card.issue.id}`} issue={card.issue}
-              onDragStart={()=>setDragging({type:"issue",id:card.issue.id})}
-              onDragEnd={()=>setDragging(null)}
-            />
-          );
-          const weekDone = weekCounts[card.habit.id]??0;
-          const alreadyDoneToday = todayLogs.some(l=>l.habitId===card.habit.id&&l.completed&&l.date===today);
-          return (
-            <HabitCard key={`h-${card.habit.id}`} habit={card.habit}
-              weekDone={weekDone} alreadyDoneToday={alreadyDoneToday}
-              onRequestDone={()=>onRequestDone({type:"habit",id:card.habit.id})}
-              onDragStart={()=>setDragging({type:"habit",id:card.habit.id})}
-              onDragEnd={()=>setDragging(null)}
-            />
-          );
-        })}
-        {cards.length===0 && (
+        {issues.map(issue => (
+          <IssueCard key={issue.id} issue={issue}
+            onDragStart={()=>setDragging({id:issue.id})}
+            onDragEnd={()=>setDragging(null)}
+            onClick={()=>onIssueClick(issue)}
+          />
+        ))}
+        {issues.length===0 && (
           <div className="rounded-xl border border-dashed p-5 text-center" style={{borderColor:`${color}20`}}>
             <p className="text-xs text-muted-foreground">Empty</p>
           </div>
@@ -531,36 +690,32 @@ function KanbanColumn({ title, color, columnKey, cards, weekCounts, todayLogs, o
   );
 }
 
-function BoardContent({ habits, weekCounts, todayLogs, sprintIssues, onRequestDone, onStatusChange, onPlanSprint }: {
-  habits:Habit[]; weekCounts:Record<number,number>; todayLogs:HabitLog[];
+function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClick, onPlanSprint }: {
   sprintIssues:AnyIssue[]; onRequestDone:(p:PendingDone)=>void;
-  onStatusChange:(id:number,s:string)=>void; onPlanSprint:()=>void;
+  onStatusChange:(id:number,s:string)=>void; onIssueClick:(issue:AnyIssue)=>void; onPlanSprint:()=>void;
 }) {
   const [dragging, setDragging] = useState<DragInfo|null>(null);
-  const todoHabits   = habits.filter(h=>(weekCounts[h.id]??0)<h.targetDaysPerWeek);
-  const doneHabits   = habits.filter(h=>(weekCounts[h.id]??0)>=h.targetDaysPerWeek);
-  const todoCards:BoardCard[]  = [...todoHabits.map(h=>({kind:"habit" as const,habit:h})), ...sprintIssues.filter(i=>["backlog","todo"].includes(i.status)).map(i=>({kind:"issue" as const,issue:i}))];
-  const inProgCards:BoardCard[] = sprintIssues.filter(i=>["in_progress","in_review"].includes(i.status)).map(i=>({kind:"issue" as const,issue:i}));
-  const doneCards:BoardCard[]  = [...doneHabits.map(h=>({kind:"habit" as const,habit:h})), ...sprintIssues.filter(i=>DONE_STATUSES.includes(i.status)).map(i=>({kind:"issue" as const,issue:i}))];
-  const colProps = {weekCounts,todayLogs,onRequestDone,onStatusChange,dragging,setDragging};
-  const isEmpty = sprintIssues.length===0 && habits.length===0;
+  const todoIssues  = sprintIssues.filter(i=>["backlog","todo"].includes(i.status));
+  const inProgIssues = sprintIssues.filter(i=>["in_progress","in_review"].includes(i.status));
+  const doneIssues  = sprintIssues.filter(i=>DONE_STATUSES.includes(i.status));
+  const colProps = {onRequestDone,onStatusChange,onIssueClick,dragging,setDragging};
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{sprintIssues.length} tickets · {habits.length} habits</p>
+        <p className="text-xs text-muted-foreground">{sprintIssues.length} ticket{sprintIssues.length!==1?"s":""} in sprint</p>
         <button onClick={onPlanSprint} className="text-xs font-medium text-primary hover:underline">Plan sprint →</button>
       </div>
-      {isEmpty ? (
+      {sprintIssues.length===0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
           <p className="text-sm font-medium">Board is empty</p>
-          <p className="text-xs text-muted-foreground">Add habits or <button onClick={onPlanSprint} className="text-primary hover:underline">plan your sprint →</button></p>
+          <p className="text-xs text-muted-foreground"><button onClick={onPlanSprint} className="text-primary hover:underline">Plan your sprint →</button></p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        cards={todoCards}    {...colProps} />
-          <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" cards={inProgCards}  {...colProps} />
-          <KanbanColumn title="Done"        color="#10b981" columnKey="done"        cards={doneCards}    {...colProps} />
+          <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        issues={todoIssues}   {...colProps} />
+          <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" issues={inProgIssues} {...colProps} />
+          <KanbanColumn title="Done"        color="#10b981" columnKey="done"        issues={doneIssues}   {...colProps} />
         </div>
       )}
     </div>
@@ -679,7 +834,6 @@ export default function DashboardPage() {
   const today = localToday();
   const [mood, setMood]               = useState<{moodScore:number}|null>(null);
   const [habits, setHabits]           = useState<Habit[]>([]);
-  const [todayLogs, setTodayLogs]     = useState<HabitLog[]>([]);
   const [weekCounts, setWeekCounts]   = useState<Record<number,number>>({});
   const [sprintIssues, setSprintIssues] = useState<AnyIssue[]>([]);
   const [allIssues, setAllIssues]     = useState<AnyIssue[]>([]);
@@ -688,6 +842,7 @@ export default function DashboardPage() {
   const [loading, setLoading]         = useState(true);
   const [sprintOpen, setSprintOpen]   = useState(false);
   const [pendingDone, setPendingDone] = useState<PendingDone|null>(null);
+  const [selectedIssue, setSelectedIssue] = useState<AnyIssue|null>(null);
   const sprintIds = useMemo(()=>new Set(sprintIssues.map(i=>i.id)),[sprintIssues]);
 
   useEffect(()=>{
@@ -704,8 +859,7 @@ export default function DashboardPage() {
           fetch("/api/issues?all=true").then(safe),
         ]);
         setMood(moodData?.moodScore?moodData:null);
-        const h:Habit[]=Array.isArray(habitsData)?habitsData:[];
-        setHabits(h);
+        setHabits(Array.isArray(habitsData)?habitsData:[]);
         setSprintIssues(Array.isArray(sprintData)?sprintData:[]);
         setAllIssues(Array.isArray(allIssuesData)?allIssuesData:[]);
         setHabitLogs(Array.isArray(logsData)?logsData:[]);
@@ -713,10 +867,6 @@ export default function DashboardPage() {
         const wc:Record<number,number>={};
         (Array.isArray(weekData)?weekData:[]).forEach((r:WeekCount)=>{wc[r.habitId]=r.doneThisWeek;});
         setWeekCounts(wc);
-        if(h.length>0){
-          const logs=await Promise.all(h.map((hb:Habit)=>fetch(`/api/habits/${hb.id}/log`).then(safe)));
-          setTodayLogs(logs.flat().filter((l:HabitLog|null)=>l?.date===today) as HabitLog[]);
-        }
       }catch(err){console.error("Dashboard load error:",err);}
       finally{setLoading(false);}
     }
@@ -728,16 +878,9 @@ export default function DashboardPage() {
     setSprintIssues(p=>p.map(i=>i.id===id?{...i,status}:i));
     setAllIssues(p=>p.map(i=>i.id===id?{...i,status}:i));
   }
-  async function markHabitDone(habitId:number,logStatus:"completed"|"skipped"){
-    const completed=logStatus==="completed";
-    await fetch(`/api/habits/${habitId}/log`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date:today,completed,logStatus})});
-    if(completed) setWeekCounts(p=>({...p,[habitId]:(p[habitId]??0)+1}));
-    setTodayLogs(p=>{const exists=p.find(l=>l.habitId===habitId&&l.date===today);const entry:HabitLog={habitId,date:today,completed,logStatus};return exists?p.map(l=>l.habitId===habitId&&l.date===today?entry:l):[...p,entry];});
-  }
   function confirmDone(choice:"completed"|"cancelled"){
     if(!pendingDone) return;
-    if(pendingDone.type==="issue") changeIssueStatus(pendingDone.id,choice==="completed"?"done":"cancelled");
-    else markHabitDone(pendingDone.id,choice==="completed"?"completed":"skipped");
+    changeIssueStatus(pendingDone.id, choice==="completed"?"done":"cancelled");
     setPendingDone(null);
   }
   async function toggleSprint(id:number,inSprint:boolean){
@@ -749,7 +892,13 @@ export default function DashboardPage() {
   const now=new Date(), startOfYear=new Date(now.getFullYear(),0,0);
   const dayOfYear=Math.floor((now.getTime()-startOfYear.getTime())/86400000);
   const daysLeft=365-dayOfYear;
-  const doneToday=todayLogs.filter(l=>l.completed).length;
+  const weeklyPct = useMemo(()=>{
+    if(habits.length===0) return null;
+    const target=habits.reduce((s,h)=>s+h.targetDaysPerWeek,0);
+    if(target===0) return null;
+    const done=habits.reduce((s,h)=>s+Math.min(weekCounts[h.id]??0,h.targetDaysPerWeek),0);
+    return Math.round((done/target)*100);
+  },[habits,weekCounts]);
 
   return (
     <>
@@ -785,15 +934,15 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-            {/* Glance grid — replaces both the strip and the bottom tiles */}
-            <GlanceGrid mood={mood} doneToday={doneToday} totalHabits={habits.length} workouts={workouts}/>
+            {/* Glance grid */}
+            <GlanceGrid mood={mood} weeklyPct={weeklyPct} workouts={workouts}/>
 
             {/* Board */}
             <CollapsibleSection id="board" title="Board" icon={<LayoutDashboard className="h-4 w-4 text-violet-400"/>}>
               <BoardContent
-                habits={habits} weekCounts={weekCounts} todayLogs={todayLogs}
                 sprintIssues={sprintIssues} onRequestDone={setPendingDone}
-                onStatusChange={changeIssueStatus} onPlanSprint={()=>setSprintOpen(true)}
+                onStatusChange={changeIssueStatus} onIssueClick={setSelectedIssue}
+                onPlanSprint={()=>setSprintOpen(true)}
               />
             </CollapsibleSection>
 
@@ -808,7 +957,21 @@ export default function DashboardPage() {
       </div>
 
       <SprintDrawer open={sprintOpen} onClose={()=>setSprintOpen(false)} sprintIds={sprintIds} onToggle={toggleSprint}/>
-      {pendingDone && <DoneModal pending={pendingDone} onConfirm={confirmDone} onCancel={()=>setPendingDone(null)}/>}
+      {pendingDone && <DoneModal onConfirm={confirmDone} onCancel={()=>setPendingDone(null)}/>}
+      <DashboardTicketDialog
+        issue={selectedIssue}
+        onClose={()=>setSelectedIssue(null)}
+        onUpdate={(id,patch)=>{
+          setSprintIssues(p=>p.map(i=>i.id===id?{...i,...patch}:i));
+          setAllIssues(p=>p.map(i=>i.id===id?{...i,...patch}:i));
+          setSelectedIssue(prev=>prev?.id===id?{...prev,...patch}:prev);
+        }}
+        onDelete={(id)=>{
+          setSprintIssues(p=>p.filter(i=>i.id!==id));
+          setAllIssues(p=>p.filter(i=>i.id!==id));
+          setSelectedIssue(null);
+        }}
+      />
     </>
   );
 }
