@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   ChevronLeft, Plus, Circle, CheckCircle2, MoreHorizontal,
   Layers, Award, Briefcase, User, Trash2, Calendar,
-  AlignLeft, Tag, Flag,
+  AlignLeft, Tag, Flag, Pencil, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import {
   Project, Issue, IssueStatus, IssuePriority, ProjectCategory,
-  STATUS_CONFIG, STATUS_ORDER, PRIORITY_CONFIG, CATEGORY_CONFIG,
+  STATUS_CONFIG, STATUS_ORDER, PRIORITY_CONFIG, CATEGORY_CONFIG, PROJECT_COLORS,
 } from "@/lib/types/goals";
 
 function SprintBadge({ inSprint, onChange }: { inSprint: boolean; onChange: () => void }) {
@@ -491,6 +491,12 @@ export default function ProjectDetailPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
+  const [showEdit, setShowEdit]           = useState(false);
+  const [editTitle, setEditTitle]         = useState("");
+  const [editCategory, setEditCategory]   = useState<ProjectCategory>("project");
+  const [editColor, setEditColor]         = useState("");
+  const [editTargetDate, setEditTargetDate] = useState("");
+  const [editSaving, setEditSaving]       = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -544,6 +550,24 @@ export default function ProjectDetailPage() {
     setIssues((prev) => prev.filter((i) => i.id !== issueId));
   }
 
+  async function saveProject() {
+    if (!project) return;
+    setEditSaving(true);
+    const updated = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editTitle.trim() || project.title,
+        category: editCategory,
+        color: editColor,
+        targetDate: editTargetDate || null,
+      }),
+    }).then(r => r.json());
+    setProject(prev => prev ? { ...prev, ...updated } : prev);
+    setShowEdit(false);
+    setEditSaving(false);
+  }
+
   if (loading) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-4">
@@ -587,42 +611,111 @@ export default function ProjectDetailPage() {
 
         {/* Project header */}
         <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-          <div className="flex items-start gap-3">
-            <div
-              className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: `${project.color}22`, color: project.color }}
-            >
-              <Icon className="h-5 w-5" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold tracking-tight">{project.title}</h1>
-              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                <span className="text-xs text-muted-foreground">{CATEGORY_CONFIG[project.category].label}</span>
-                {daysLeft !== null && (
-                  <span className={`text-xs font-medium ${daysLeft < 7 ? "text-rose-400" : daysLeft < 30 ? "text-amber-400" : "text-muted-foreground"}`}>
-                    {daysLeft > 0 ? `${daysLeft}d left` : daysLeft === 0 ? "Due today" : `${Math.abs(daysLeft)}d overdue`}
-                  </span>
-                )}
-                {project.status !== "active" && (
-                  <Badge variant="secondary" className="text-[10px] capitalize">{project.status}</Badge>
-                )}
+          {showEdit ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Edit project</p>
+                <button onClick={() => setShowEdit(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Project title..." className="font-semibold" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Category</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(Object.keys(CATEGORY_CONFIG) as ProjectCategory[]).map(cat => {
+                      const CatIcon = CATEGORY_ICONS[cat];
+                      return (
+                        <button key={cat} type="button" onClick={() => setEditCategory(cat)}
+                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                            editCategory === cat ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                          }`}>
+                          <CatIcon className="h-3 w-3" />{CATEGORY_CONFIG[cat].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">Color</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PROJECT_COLORS.map(c => (
+                      <button key={c} type="button" onClick={() => setEditColor(c)}
+                        className="h-6 w-6 rounded-full transition-all"
+                        style={{
+                          backgroundColor: c,
+                          transform: editColor === c ? "scale(1.25)" : "scale(1)",
+                          boxShadow: editColor === c ? `0 0 0 2px var(--background), 0 0 0 3.5px ${c}` : "none",
+                        }} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">Target date</p>
+                <Input type="date" value={editTargetDate} onChange={e => setEditTargetDate(e.target.value)} />
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={saveProject} disabled={editSaving || !editTitle.trim()} className="flex-1">
+                  {editSaving ? "Saving..." : "Save changes"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
               </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-3">
+                <div
+                  className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: `${project.color}22`, color: project.color }}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-xl font-bold tracking-tight">{project.title}</h1>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    <span className="text-xs text-muted-foreground">{CATEGORY_CONFIG[project.category].label}</span>
+                    {daysLeft !== null && (
+                      <span className={`text-xs font-medium ${daysLeft < 7 ? "text-rose-400" : daysLeft < 30 ? "text-amber-400" : "text-muted-foreground"}`}>
+                        {daysLeft > 0 ? `${daysLeft}d left` : daysLeft === 0 ? "Due today" : `${Math.abs(daysLeft)}d overdue`}
+                      </span>
+                    )}
+                    {project.status !== "active" && (
+                      <Badge variant="secondary" className="text-[10px] capitalize">{project.status}</Badge>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditTitle(project.title);
+                    setEditCategory(project.category);
+                    setEditColor(project.color);
+                    setEditTargetDate(project.targetDate ?? "");
+                    setShowEdit(true);
+                  }}
+                  className="shrink-0 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Edit project"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </div>
 
-          {/* Progress */}
-          <div className="space-y-1.5">
-            <div className="h-2 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${progress}%`, backgroundColor: project.color }}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{doneTickets}/{totalTickets} done</span>
-              <span className="text-xs font-semibold" style={{ color: project.color }}>{progress}%</span>
-            </div>
-          </div>
+              {/* Progress */}
+              <div className="space-y-1.5">
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${progress}%`, backgroundColor: project.color }}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{doneTickets}/{totalTickets} done</span>
+                  <span className="text-xs font-semibold" style={{ color: project.color }}>{progress}%</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Issue groups */}

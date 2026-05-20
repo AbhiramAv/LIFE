@@ -187,30 +187,72 @@ function ProjectCard({ project, onDeleted }: { project: Project; onDeleted: (id:
   );
 }
 
-function parseImport(raw: string): { goal: string; tasks: { title: string; priority?: string }[] } | null {
+function parseImport(raw: string) {
   raw = raw.trim();
   if (!raw) return null;
-  // Try JSON
+
   try {
     const parsed = JSON.parse(raw);
     if (parsed.goal && Array.isArray(parsed.tasks) && parsed.tasks.length > 0) return parsed;
   } catch {}
-  // Flexible text/markdown: handles # headings, *, -, numbered lists
-  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  // Title: first # heading, or very first line
-  const headingLine = lines.find((l) => /^#{1,3}\s/.test(l));
-  const goal = (headingLine ?? lines[0]).replace(/^#{1,3}\s*/, "").trim();
-  // Tasks: - bullets, * bullets, numbered (1. / 1)) — skip heading lines
-  const tasks = lines
-    .filter((l) => /^[-*]\s/.test(l) || /^\d+[.)]\s/.test(l))
-    .map((l) => ({
+
+  const lines = raw.split("\n");
+
+  function hlevel(line: string) {
+    const m = line.match(/^(#{1,6}) /);
+    return m ? m[1].length : 0;
+  }
+
+  // Heading-as-task mode: ### headings = tickets (handles structured outlines like DSA content)
+  if (lines.some(l => hlevel(l) === 3)) {
+    const PRIORITY_MAP: Record<string, string> = {
+      critical: "urgent", high: "high", medium: "medium", low: "low", none: "none",
+    };
+    const titleLine = lines.find(l => hlevel(l) === 1) ?? lines.find(l => hlevel(l) === 2);
+    const goal = titleLine ? titleLine.replace(/^#{1,6} /, "").trim() : "Imported Project";
+
+    const tasks: { title: string; description?: string; priority?: string }[] = [];
+    let curTitle = "";
+    let curBody: string[] = [];
+
+    function flush() {
+      if (!curTitle) return;
+      const body = curBody.join("\n").trim();
+      const pm = body.match(/\*\*Priority:\*\*\s*(Critical|High|Medium|Low|None)/i);
+      tasks.push({
+        title: curTitle,
+        ...(body ? { description: body } : {}),
+        ...(pm ? { priority: PRIORITY_MAP[pm[1].toLowerCase()] } : {}),
+      });
+      curTitle = ""; curBody = [];
+    }
+
+    for (const line of lines) {
+      const lv = hlevel(line);
+      if (lv === 3) { flush(); curTitle = line.replace(/^### /, "").trim(); }
+      else if (lv === 1 || lv === 2) { flush(); }
+      else if (curTitle) curBody.push(line);
+    }
+    flush();
+
+    return tasks.length > 0 ? { goal, tasks } : null;
+  }
+
+  // Fallback: bullet-as-task mode
+  const trimmed = lines.map(l => l.trim()).filter(Boolean);
+  const headingLine = trimmed.find(l => /^#{1,3} /.test(l));
+  const goal = (headingLine ?? trimmed[0]).replace(/^#{1,3} /, "").trim();
+  const tasks = trimmed
+    .filter(l => /^[-*] /.test(l) || /^\d+[.)] /.test(l))
+    .map(l => ({
       title: l
-        .replace(/^[-*]\s*(\[[ x]?\]\s*)?/, "")
-        .replace(/^\d+[.)]\s*/, "")
+        .replace(/^[-*] (\[[ x]\] )?/, "")
+        .replace(/^\d+[.)] /, "")
         .replace(/\*\*/g, "")
         .trim(),
     }))
-    .filter((t) => t.title.length > 0);
+    .filter(t => t.title.length > 0);
+
   return tasks.length > 0 ? { goal, tasks } : null;
 }
 

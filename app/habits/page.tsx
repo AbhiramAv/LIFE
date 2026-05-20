@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, Plus, Flame, X, Trash2 } from "lucide-react";
+import { Check, Plus, Flame, X, Trash2, Pencil } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -313,6 +313,12 @@ export default function HabitsPage() {
   const [freqKey, setFreqKey]       = useState("daily");
   const [loading, setLoading]       = useState(true);
   const [deleting, setDeleting]     = useState<number | null>(null);
+  const [editingHabit, setEditingHabit] = useState<number | null>(null);
+  const [editName, setEditName]         = useState("");
+  const [editBiggerGoal, setEditBiggerGoal] = useState("");
+  const [editColor, setEditColor]       = useState(COLORS[0].value);
+  const [editFreqKey, setEditFreqKey]   = useState("daily");
+  const [editSaving, setEditSaving]     = useState(false);
 
   useEffect(() => {
     fetch("/api/habits")
@@ -378,6 +384,34 @@ export default function HabitsPage() {
     await fetch(`/api/habits/${habitId}`, { method: "DELETE" });
     setHabits(prev => prev.filter(h => h.id !== habitId));
     setDeleting(null);
+  }
+
+  function startEdit(habit: Habit) {
+    setEditName(habit.name);
+    setEditBiggerGoal(habit.biggerGoal ?? "");
+    setEditColor(habit.color);
+    setEditFreqKey(FREQ_OPTIONS.find(f => f.days === habit.targetDaysPerWeek)?.value ?? "daily");
+    setEditingHabit(habit.id);
+  }
+
+  async function saveHabit() {
+    if (!editingHabit) return;
+    setEditSaving(true);
+    const freq = FREQ_OPTIONS.find(f => f.value === editFreqKey)!;
+    const updated = await fetch(`/api/habits/${editingHabit}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editName.trim() || "Habit",
+        biggerGoal: editBiggerGoal.trim() || null,
+        color: editColor,
+        frequency: editFreqKey === "daily" || editFreqKey === "weekly" ? editFreqKey : "weekly",
+        targetDaysPerWeek: freq.days,
+      }),
+    }).then(r => r.json());
+    setHabits(prev => prev.map(h => h.id === editingHabit ? { ...h, ...updated } : h));
+    setEditingHabit(null);
+    setEditSaving(false);
   }
 
   return (
@@ -473,6 +507,63 @@ export default function HabitsPage() {
         ) : (
           <div className="space-y-2">
             {habits.map(habit => {
+              if (editingHabit === habit.id) {
+                return (
+                  <div key={habit.id} className="rounded-xl border border-primary/30 bg-card p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: editColor }} />
+                        <p className="text-sm font-semibold">Edit habit</p>
+                      </div>
+                      <button onClick={() => setEditingHabit(null)} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Bigger goal</p>
+                      <Input value={editBiggerGoal} onChange={e => setEditBiggerGoal(e.target.value)} placeholder="e.g. Health, Mental clarity..." />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Habit name</p>
+                      <Input value={editName} onChange={e => setEditName(e.target.value)} placeholder="e.g. Meditate, Read 20 mins..." autoFocus />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Frequency</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {FREQ_OPTIONS.map(f => (
+                          <button key={f.value} type="button" onClick={() => setEditFreqKey(f.value)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                              editFreqKey === f.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                            }`}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Color</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {COLORS.map(c => (
+                          <button key={c.value} type="button" onClick={() => setEditColor(c.value)}
+                            className="h-7 w-7 rounded-full transition-all"
+                            style={{
+                              backgroundColor: c.value,
+                              transform: editColor === c.value ? "scale(1.2)" : "scale(1)",
+                              boxShadow: editColor === c.value ? `0 0 0 2px var(--background), 0 0 0 4px ${c.value}` : "none",
+                            }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={saveHabit} disabled={editSaving || !editName.trim()} className="flex-1">
+                        {editSaving ? "Saving..." : "Save"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingHabit(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                );
+              }
+
               const todayLog = todayLogMap.get(habit.id);
               const isDone = todayLog?.logStatus === "completed";
               const isSkipped = todayLog?.logStatus === "skipped";
@@ -531,6 +622,13 @@ export default function HabitsPage() {
                       </button>
                     </div>
                   )}
+
+                  {/* Edit */}
+                  <button onClick={() => startEdit(habit)}
+                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 transition-opacity"
+                    aria-label="Edit habit">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
 
                   {/* Delete */}
                   <button onClick={() => deleteHabit(habit.id)} disabled={deleting === habit.id}
