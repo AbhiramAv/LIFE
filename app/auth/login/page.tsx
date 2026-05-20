@@ -31,6 +31,7 @@ export default function LoginPage() {
     setLoading(true); setError("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError(error.message); setLoading(false); return; }
+    await fetch("/api/auth/sync", { method: "POST" });
     router.push("/");
     router.refresh();
   }
@@ -77,12 +78,14 @@ export default function LoginPage() {
         <GoogleIcon /> Continue with Google
       </Button>
 
-      <p className="text-center text-xs text-muted-foreground">
-        No account?{" "}
-        <Link href="/auth/signup" className="text-foreground hover:underline font-medium">
-          Sign up
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <Link href="/auth/forgot-password" className="hover:text-foreground transition-colors">
+          Forgot password?
         </Link>
-      </p>
+        <Link href="/auth/signup" className="text-foreground hover:underline font-medium">
+          Create account
+        </Link>
+      </div>
     </div>
   );
 }

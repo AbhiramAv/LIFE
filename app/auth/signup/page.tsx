@@ -18,6 +18,7 @@ function GoogleIcon() {
 }
 
 export default function SignupPage() {
+  const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
@@ -31,7 +32,10 @@ export default function SignupPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      options: {
+        emailRedirectTo: `${location.origin}/auth/callback`,
+        data: { name: name.trim() },
+      },
     });
     if (error) { setError(error.message); setLoading(false); return; }
     setSent(true);
@@ -67,8 +71,12 @@ export default function SignupPage() {
 
       <form onSubmit={signUp} className="space-y-3">
         <Input
+          placeholder="Your name" value={name}
+          onChange={e => setName(e.target.value)} required autoFocus
+        />
+        <Input
           type="email" placeholder="Email" value={email}
-          onChange={e => setEmail(e.target.value)} required autoFocus
+          onChange={e => setEmail(e.target.value)} required
         />
         <Input
           type="password" placeholder="Password (min 6 characters)" value={password}
@@ -81,9 +89,7 @@ export default function SignupPage() {
       </form>
 
       <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border" />
-        </div>
+        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
         <div className="relative flex justify-center text-xs uppercase">
           <span className="bg-background px-2 text-muted-foreground">or</span>
         </div>
@@ -95,9 +101,7 @@ export default function SignupPage() {
 
       <p className="text-center text-xs text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/auth/login" className="text-foreground hover:underline font-medium">
-          Sign in
-        </Link>
+        <Link href="/auth/login" className="text-foreground hover:underline font-medium">Sign in</Link>
       </p>
     </div>
   );

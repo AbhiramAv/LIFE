@@ -152,6 +152,36 @@ export const issues = pgTable("issues", {
   updatedAt: text("updated_at").notNull().default(sql`now()`),
 });
 
+// ─── User Profiles ────────────────────────────────────────────────────────────
+
+export const userProfiles = pgTable("user_profiles", {
+  id:        text("id").primaryKey(),
+  email:     text("email").notNull(),
+  name:      text("name"),
+  role:      text("role").notNull().default("user"),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+  lastSeen:  text("last_seen").notNull().default(sql`now()`),
+});
+
+// ─── Support ──────────────────────────────────────────────────────────────────
+
+export const supportThreads = pgTable("support_threads", {
+  id:        serial("id").primaryKey(),
+  userId:    text("user_id").notNull(),
+  status:    text("status").notNull().default("open"), // open | closed
+  createdAt: text("created_at").notNull().default(sql`now()`),
+  updatedAt: text("updated_at").notNull().default(sql`now()`),
+});
+
+export const supportMessages = pgTable("support_messages", {
+  id:        serial("id").primaryKey(),
+  threadId:  integer("thread_id").notNull().references(() => supportThreads.id, { onDelete: "cascade" }),
+  senderId:  text("sender_id").notNull(),
+  isAdmin:   boolean("is_admin").notNull().default(false),
+  content:   text("content").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()`),
+});
+
 // ─── Calendar Events ──────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable("calendar_events", {

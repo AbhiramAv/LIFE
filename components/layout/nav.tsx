@@ -1,72 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useTheme } from "next-themes";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Heart, Target, Activity, DollarSign,
-  Layers, Moon, Sun, Sparkles, Camera, CalendarDays, Menu, X, LogOut,
+  Layers, Sparkles, Camera, CalendarDays, Menu, X,
+  LogOut, Settings, HelpCircle, User,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
+import type { User as SBUser } from "@supabase/supabase-js";
 
 export const NAV_LINKS = [
-  { href: "/",         label: "Dashboard", icon: LayoutDashboard, color: "#8b5cf6", tw: "text-violet-400"  },
-  { href: "/mood",     label: "Mood",       icon: Heart,           color: "#f43f5e", tw: "text-rose-400"    },
-  { href: "/habits",   label: "Habits",     icon: Target,          color: "#8b5cf6", tw: "text-violet-400"  },
-  { href: "/fitness",  label: "Fitness",    icon: Activity,        color: "#10b981", tw: "text-emerald-400" },
-  { href: "/finance",  label: "Finance",    icon: DollarSign,      color: "#f59e0b", tw: "text-amber-400"   },
-  { href: "/goals",    label: "Goals",      icon: Layers,          color: "#0ea5e9", tw: "text-sky-400"     },
-  { href: "/calendar", label: "Calendar",   icon: CalendarDays,    color: "#6366f1", tw: "text-indigo-400"  },
-  { href: "/memories", label: "Memories",   icon: Camera,          color: "#d946ef", tw: "text-fuchsia-400" },
+  { href: "/",         label: "Dashboard", icon: LayoutDashboard, color: "#8b5cf6" },
+  { href: "/mood",     label: "Mood",       icon: Heart,           color: "#f43f5e" },
+  { href: "/habits",   label: "Habits",     icon: Target,          color: "#8b5cf6" },
+  { href: "/fitness",  label: "Fitness",    icon: Activity,        color: "#10b981" },
+  { href: "/finance",  label: "Finance",    icon: DollarSign,      color: "#f59e0b" },
+  { href: "/goals",    label: "Goals",      icon: Layers,          color: "#0ea5e9" },
+  { href: "/calendar", label: "Calendar",   icon: CalendarDays,    color: "#6366f1" },
+  { href: "/memories", label: "Memories",   icon: Camera,          color: "#d946ef" },
 ];
 
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <div className="h-8 w-8" />;
-  return (
-    <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-      aria-label="Toggle theme"
-    >
-      {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </button>
-  );
-}
-
 function NavLinks({ pathname, collapsed, onLinkClick }: {
-  pathname: string;
-  collapsed: boolean;
-  onLinkClick?: () => void;
+  pathname: string; collapsed: boolean; onLinkClick?: () => void;
 }) {
   return (
     <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-      {NAV_LINKS.map(({ href, label, icon: Icon, color, tw }) => {
+      {NAV_LINKS.map(({ href, label, icon: Icon, color }) => {
         const active = pathname === href;
         return (
-          <Link
-            key={href}
-            href={href}
-            onClick={onLinkClick}
+          <Link key={href} href={href} onClick={onLinkClick}
             title={collapsed ? label : undefined}
             className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
               active ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
             } ${collapsed ? "justify-center px-2" : ""}`}
-            style={active ? { backgroundColor: `${color}18`, borderLeft: `2px solid ${color}` } : {}}
-          >
-            <Icon
-              className={`h-4 w-4 shrink-0 transition-colors ${active ? "" : tw}`}
-              style={active ? { color } : {}}
-            />
+            style={active ? { backgroundColor: `${color}18`, borderLeft: `2px solid ${color}` } : {}}>
+            <Icon className="h-4 w-4 shrink-0" style={active ? { color } : {}} />
             {!collapsed && <span>{label}</span>}
-            {!collapsed && active && (
-              <div className="ml-auto h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-            )}
+            {!collapsed && active && <div className="ml-auto h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />}
           </Link>
         );
       })}
@@ -74,13 +47,20 @@ function NavLinks({ pathname, collapsed, onLinkClick }: {
   );
 }
 
-function UserFooter({ collapsed }: { collapsed: boolean }) {
-  const [user, setUser] = useState<User | null>(null);
-  const router = useRouter();
+function UserSection({ collapsed }: { collapsed: boolean }) {
+  const [user, setUser]             = useState<SBUser | null>(null);
+  const [name, setName]             = useState<string | null>(null);
+  const [settingsOpen, setSettings] = useState(false);
+  const router   = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      if (data.user) {
+        fetch("/api/user/profile").then(r => r.json()).then(p => setName(p?.name ?? null));
+      }
+    });
   }, []);
 
   async function signOut() {
@@ -91,24 +71,55 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
 
   if (!user) return null;
 
+  const displayName = name || user.email?.split("@")[0] || "Account";
+  const initial     = displayName[0].toUpperCase();
+
   return (
-    <div className={`border-t border-border px-2 py-2 ${collapsed ? "flex justify-center" : ""}`}>
-      {collapsed ? (
-        <button onClick={signOut} title="Sign out"
-          className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-          <LogOut className="h-4 w-4" />
-        </button>
-      ) : (
-        <div className="flex items-center gap-2 px-1">
-          <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-primary uppercase">
-            {user.email?.[0] ?? "?"}
+    <div className="border-t border-border shrink-0">
+      {/* Settings panel */}
+      {settingsOpen && !collapsed && (
+        <div className="px-3 py-3 space-y-0.5 border-b border-border bg-muted/30">
+          <Link href="/settings"
+            onClick={() => setSettings(false)}
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <User className="h-3.5 w-3.5" /> Profile &amp; Account
+          </Link>
+          <div className="flex items-center justify-between px-2.5 py-2">
+            <span className="text-xs font-medium text-muted-foreground">Dark mode</span>
+            <ThemeToggle size="sm" />
           </div>
-          <p className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">{user.email}</p>
-          <button onClick={signOut} title="Sign out"
-            className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0">
-            <LogOut className="h-3.5 w-3.5" />
+          <Link href="/help"
+            onClick={() => setSettings(false)}
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+            <HelpCircle className="h-3.5 w-3.5" /> Help &amp; FAQ
+          </Link>
+          <div className="my-1 h-px bg-border" />
+          <button onClick={signOut}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors">
+            <LogOut className="h-3.5 w-3.5" /> Sign out
           </button>
         </div>
+      )}
+
+      {collapsed ? (
+        <div className="flex flex-col items-center gap-2 py-3">
+          <button onClick={() => setSettings(o => !o)} title="Settings"
+            className={`h-8 w-8 flex items-center justify-center rounded-lg transition-colors ${settingsOpen ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+            <Settings className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setSettings(o => !o)}
+          className="w-full flex items-center gap-3 px-4 py-4 hover:bg-accent/50 transition-colors group">
+          <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center text-base font-bold text-primary shrink-0">
+            {initial}
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold leading-tight truncate">{displayName}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+          </div>
+          <Settings className={`h-4 w-4 shrink-0 transition-colors ${settingsOpen ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"}`} />
+        </button>
       )}
     </div>
   );
@@ -116,40 +127,29 @@ function UserFooter({ collapsed }: { collapsed: boolean }) {
 
 export function Nav() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed]   = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  if (pathname.startsWith("/auth")) return null;
 
   useEffect(() => {
     const stored = localStorage.getItem("nav-collapsed");
     if (stored === "true") setCollapsed(true);
   }, []);
 
-  function toggleCollapse() {
-    setCollapsed((c) => {
-      localStorage.setItem("nav-collapsed", String(!c));
-      return !c;
-    });
-  }
-
   useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  if (pathname.startsWith("/auth") || pathname.startsWith("/admin")) return null;
+
+  function toggleCollapse() {
+    setCollapsed(c => { localStorage.setItem("nav-collapsed", String(!c)); return !c; });
+  }
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside
-        className={`hidden md:flex flex-col shrink-0 border-r border-border bg-sidebar min-h-screen sticky top-0 transition-all duration-200 ${
-          collapsed ? "w-[56px]" : "w-56"
-        }`}
-      >
-        {/* Header — hamburger at top-left, theme toggle at top-right */}
+      <aside className={`hidden md:flex flex-col shrink-0 border-r border-border bg-sidebar min-h-screen sticky top-0 transition-all duration-200 ${collapsed ? "w-[56px]" : "w-56"}`}>
         <div className={`flex items-center border-b border-border h-14 ${collapsed ? "flex-col justify-center gap-1 px-2 py-2" : "gap-2 px-3"}`}>
-          <button
-            onClick={toggleCollapse}
+          <button onClick={toggleCollapse}
             className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0"
-            title={collapsed ? "Expand" : "Collapse"}
-          >
+            title={collapsed ? "Expand" : "Collapse"}>
             <Menu className="h-4 w-4" />
           </button>
           {!collapsed && (
@@ -163,29 +163,20 @@ export function Nav() {
               </div>
             </>
           )}
-          <ThemeToggle />
         </div>
-
         <NavLinks pathname={pathname} collapsed={collapsed} />
-        <UserFooter collapsed={collapsed} />
+        <UserSection collapsed={collapsed} />
       </aside>
 
-      {/* Mobile hamburger — fixed top-left */}
-      <button
-        onClick={() => setMobileOpen(true)}
+      <button onClick={() => setMobileOpen(true)}
         className="md:hidden fixed top-3 left-3 z-40 h-9 w-9 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm border border-border text-foreground shadow-sm"
-        aria-label="Open menu"
-      >
+        aria-label="Open menu">
         <Menu className="h-4 w-4" />
       </button>
 
-      {/* Mobile overlay drawer */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
-          />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="relative w-64 bg-sidebar border-r border-border flex flex-col min-h-full shadow-2xl">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
               <div className="flex items-center gap-2.5">
@@ -197,20 +188,13 @@ export function Nav() {
                   <p className="text-[10px] text-muted-foreground leading-none mt-0.5">lifetime dashboard</p>
                 </div>
               </div>
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
+              <button onClick={() => setMobileOpen(false)}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
-
             <NavLinks pathname={pathname} collapsed={false} onLinkClick={() => setMobileOpen(false)} />
-
-            <div className="px-3 py-3 border-t border-border flex items-center justify-between">
-              <ThemeToggle />
-            </div>
-            <UserFooter collapsed={false} />
+            <UserSection collapsed={false} />
           </aside>
         </div>
       )}

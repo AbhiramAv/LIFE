@@ -20,11 +20,37 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  // Refresh session — must happen before any redirect checks
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user && !request.nextUrl.pathname.startsWith("/auth")) {
+  const { pathname } = request.nextUrl;
+
+  // Public paths — always allowed
+  if (pathname.startsWith("/auth")) return supabaseResponse;
+
+  // Unauthenticated → login
+  if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
+    return NextResponse.redirect(url);
+  }
+
+  const role = user.user_metadata?.role as string | undefined;
+
+  // Admin users → only /admin routes allowed
+  if (role === "admin") {
+    if (!pathname.startsWith("/admin")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      return NextResponse.redirect(url);
+    }
+    return supabaseResponse;
+  }
+
+  // Non-admin users → blocked from /admin
+  if (pathname.startsWith("/admin")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
 
