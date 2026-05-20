@@ -65,6 +65,15 @@ export default function LoginPage() {
         </Button>
       </form>
 
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <Link href="/auth/forgot-password" className="hover:text-foreground transition-colors">
+          Forgot password?
+        </Link>
+        <Link href="/auth/signup" className="text-foreground hover:underline font-medium">
+          Create account
+        </Link>
+      </div>
+
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t border-border" />
@@ -77,15 +86,6 @@ export default function LoginPage() {
       <Button variant="outline" className="w-full" onClick={signInWithGoogle}>
         <GoogleIcon /> Continue with Google
       </Button>
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <Link href="/auth/forgot-password" className="hover:text-foreground transition-colors">
-          Forgot password?
-        </Link>
-        <Link href="/auth/signup" className="text-foreground hover:underline font-medium">
-          Create account
-        </Link>
-      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,24 @@ export default function SignupPage() {
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [sent, setSent]         = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent]       = useState(false);
+  const [cooldown, setCooldown]   = useState(0);
   const supabase = createClient();
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function resend() {
+    setResending(true); setResent(false);
+    await supabase.auth.resend({ type: "signup", email });
+    setResending(false); setResent(true);
+    setCooldown(30);
+    setTimeout(() => setResent(false), 3000);
+  }
 
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
@@ -50,12 +67,20 @@ export default function SignupPage() {
 
   if (sent) {
     return (
-      <div className="w-full max-w-sm text-center space-y-3">
+      <div className="w-full max-w-sm text-center space-y-4">
         <h2 className="text-lg font-semibold">Check your email</h2>
         <p className="text-sm text-muted-foreground">
           Sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.
         </p>
-        <Link href="/auth/login" className="text-sm text-foreground hover:underline">
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={resend}
+          disabled={resending || cooldown > 0}
+        >
+          {resent ? "Resent!" : resending ? "Resending…" : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend confirmation email"}
+        </Button>
+        <Link href="/auth/login" className="block text-sm text-muted-foreground hover:underline">
           Back to login
         </Link>
       </div>
