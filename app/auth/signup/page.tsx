@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ export default function SignupPage() {
   const [resent, setResent]       = useState(false);
   const [cooldown, setCooldown]   = useState(0);
   const supabase = createClient();
+  const router   = useRouter();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -46,7 +48,7 @@ export default function SignupPage() {
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true); setError("");
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -55,6 +57,16 @@ export default function SignupPage() {
       },
     });
     if (error) { setError(error.message); setLoading(false); return; }
+    if (data.session) {
+      // email confirmation disabled — user is immediately logged in
+      await fetch("/api/auth/sync", { method: "POST" });
+      router.push("/"); return;
+    }
+    if (!data.user) {
+      // repeated signup — email already registered
+      setError("An account with this email already exists. Sign in instead.");
+      setLoading(false); return;
+    }
     setSent(true);
   }
 
