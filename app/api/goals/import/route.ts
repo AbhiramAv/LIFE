@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, projects, issues } from "@/lib/db";
+import { getUser, unauthorized } from "@/lib/supabase/get-user";
 
 type TaskInput = { title: string; description?: string; priority?: string; status?: string };
 type ImportBody = { goal: string; description?: string; color?: string; category?: string; tasks: TaskInput[] };
 
 export async function POST(req: NextRequest) {
+  const user = await getUser();
+  if (!user) return unauthorized();
   const body: ImportBody = await req.json();
   const { goal, description, color, category, tasks } = body;
 
@@ -14,13 +17,14 @@ export async function POST(req: NextRequest) {
 
   const [project] = await db
     .insert(projects)
-    .values({ title: goal, description, color: color ?? "#8b5cf6", category: category ?? "project" })
+    .values({ userId: user.id, title: goal, description, color: color ?? "#8b5cf6", category: category ?? "project" })
     .returning();
 
   const inserted = await db
     .insert(issues)
     .values(
       tasks.map((t, i) => ({
+        userId: user.id,
         projectId: project.id,
         title: t.title,
         description: t.description,

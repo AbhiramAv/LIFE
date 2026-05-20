@@ -14,6 +14,7 @@ export const exercises = pgTable("exercises", {
 
 export const workoutSessions = pgTable("workout_sessions", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   date: text("date").notNull(), // YYYY-MM-DD
   notes: text("notes"),
   durationMins: integer("duration_mins"),
@@ -34,6 +35,7 @@ export const workoutSets = pgTable("workout_sets", {
 
 export const accounts = pgTable("accounts", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // checking|savings|credit|investment
   currency: text("currency").notNull().default("USD"),
@@ -48,6 +50,7 @@ export const transactionCategories = pgTable("transaction_categories", {
 
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   accountId: integer("account_id").references(() => accounts.id),
   date: text("date").notNull(),
   amount: real("amount").notNull(),
@@ -62,7 +65,8 @@ export const transactions = pgTable("transactions", {
 
 export const dailyEntries = pgTable("daily_entries", {
   id: serial("id").primaryKey(),
-  date: text("date").notNull().unique(),
+  userId: text("user_id").notNull(),
+  date: text("date").notNull(),
   moodScore: integer("mood_score").notNull(),
   energyScore: integer("energy_score").notNull(),
   stressScore: integer("stress_score").notNull(),
@@ -76,6 +80,7 @@ export const dailyEntries = pgTable("daily_entries", {
 
 export const habits = pgTable("habits", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   name: text("name").notNull(),
   biggerGoal: text("bigger_goal"),          // overarching goal this habit serves (board display title)
   frequency: text("frequency").notNull().default("daily"), // daily|weekly
@@ -87,6 +92,7 @@ export const habits = pgTable("habits", {
 
 export const habitLogs = pgTable("habit_logs", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   habitId: integer("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   completed: boolean("completed").notNull().default(true),
@@ -118,6 +124,7 @@ export const goalMilestones = pgTable("goal_milestones", {
 
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category").notNull().default("project"), // project|certification|career|personal
@@ -130,6 +137,7 @@ export const projects = pgTable("projects", {
 
 export const issues = pgTable("issues", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
@@ -148,6 +156,7 @@ export const issues = pgTable("issues", {
 
 export const calendarEvents = pgTable("calendar_events", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   date: text("date").notNull(),   // YYYY-MM-DD

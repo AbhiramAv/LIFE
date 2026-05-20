@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { db, habitLogs } from "@/lib/db";
 import { and, gte, eq, sql } from "drizzle-orm";
+import { getUser, unauthorized } from "@/lib/supabase/get-user";
 
 function weekStart(): string {
   const d = new Date();
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // back to Monday
+  const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export async function GET() {
+  const user = await getUser();
+  if (!user) return unauthorized();
   const since = weekStart();
   const rows = await db
     .select({
@@ -18,7 +21,7 @@ export async function GET() {
       doneThisWeek: sql<number>`cast(count(*) as int)`,
     })
     .from(habitLogs)
-    .where(and(gte(habitLogs.date, since), eq(habitLogs.completed, true)))
+    .where(and(gte(habitLogs.date, since), eq(habitLogs.completed, true), eq(habitLogs.userId, user.id)))
     .groupBy(habitLogs.habitId);
   return NextResponse.json(rows);
 }

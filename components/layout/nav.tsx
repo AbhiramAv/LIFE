@@ -6,8 +6,11 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Heart, Target, Activity, DollarSign,
-  Layers, Moon, Sun, Sparkles, Camera, CalendarDays, Menu, X,
+  Layers, Moon, Sun, Sparkles, Camera, CalendarDays, Menu, X, LogOut,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 
 export const NAV_LINKS = [
   { href: "/",         label: "Dashboard", icon: LayoutDashboard, color: "#8b5cf6", tw: "text-violet-400"  },
@@ -71,10 +74,52 @@ function NavLinks({ pathname, collapsed, onLinkClick }: {
   );
 }
 
+function UserFooter({ collapsed }: { collapsed: boolean }) {
+  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.push("/auth/login");
+    router.refresh();
+  }
+
+  if (!user) return null;
+
+  return (
+    <div className={`border-t border-border px-2 py-2 ${collapsed ? "flex justify-center" : ""}`}>
+      {collapsed ? (
+        <button onClick={signOut} title="Sign out"
+          className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+          <LogOut className="h-4 w-4" />
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 px-1">
+          <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-primary uppercase">
+            {user.email?.[0] ?? "?"}
+          </div>
+          <p className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">{user.email}</p>
+          <button onClick={signOut} title="Sign out"
+            className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors shrink-0">
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Nav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  if (pathname.startsWith("/auth")) return null;
 
   useEffect(() => {
     const stored = localStorage.getItem("nav-collapsed");
@@ -122,6 +167,7 @@ export function Nav() {
         </div>
 
         <NavLinks pathname={pathname} collapsed={collapsed} />
+        <UserFooter collapsed={collapsed} />
       </aside>
 
       {/* Mobile hamburger — fixed top-left */}
@@ -161,9 +207,10 @@ export function Nav() {
 
             <NavLinks pathname={pathname} collapsed={false} onLinkClick={() => setMobileOpen(false)} />
 
-            <div className="px-3 py-3 border-t border-border">
+            <div className="px-3 py-3 border-t border-border flex items-center justify-between">
               <ThemeToggle />
             </div>
+            <UserFooter collapsed={false} />
           </aside>
         </div>
       )}

@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, issues, projects } from "@/lib/db";
 import { eq, ne, and } from "drizzle-orm";
+import { getUser, unauthorized } from "@/lib/supabase/get-user";
 
 export async function GET(req: NextRequest) {
+  const user = await getUser();
+  if (!user) return unauthorized();
   const { searchParams } = req.nextUrl;
   const sprintOnly = searchParams.get("sprint") === "true";
-
   const allStatuses = searchParams.get("all") === "true";
-  const condition = sprintOnly
+
+  const userFilter = eq(issues.userId, user.id);
+  const statusFilter = sprintOnly
     ? and(ne(issues.status, "cancelled"), eq(issues.inSprint, true))
     : allStatuses ? undefined : ne(issues.status, "cancelled");
+
+  const condition = statusFilter ? and(userFilter, statusFilter) : userFilter;
 
   const rows = await db
     .select({
