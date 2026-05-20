@@ -27,6 +27,7 @@ type AnyIssue = {
 type HabitLogDay = { date: string; completed: number };
 type WorkoutDay  = { date: string };
 type Habit       = { id: number; name: string; biggerGoal: string | null; color: string; targetDaysPerWeek: number };
+type TodayLog    = { habitId: number; logStatus: string };
 type WeekCount   = { habitId: number; doneThisWeek: number };
 type PendingDone = { id: number };
 
@@ -61,8 +62,8 @@ function biggerGoalColor(goal: string|null, fallback: string) {
 
 // ─── Hover card wrapper (3D lift + glow) ─────────────────────────────────────
 
-function HoverCard({ color, children, className = "", onClick }: {
-  color: string; children: React.ReactNode; className?: string; onClick?: () => void;
+function HoverCard({ color, children, className = "", onClick, alert }: {
+  color: string; children: React.ReactNode; className?: string; onClick?: () => void; alert?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   return (
@@ -71,10 +72,12 @@ function HoverCard({ color, children, className = "", onClick }: {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        borderColor: hov ? `${color}55` : `${color}22`,
-        boxShadow: hov
-          ? `0 12px 32px -6px ${color}35, 0 0 0 1px ${color}30, inset 0 1px 0 ${color}15`
-          : `0 2px 8px -2px ${color}12, inset 0 1px 0 rgba(255,255,255,0.04)`,
+        borderColor: alert ? "#f59e0b55" : hov ? `${color}55` : `${color}22`,
+        boxShadow: alert
+          ? `0 0 0 1px #f59e0b30, 0 12px 32px -6px #f59e0b20`
+          : hov
+            ? `0 12px 32px -6px ${color}35, 0 0 0 1px ${color}30, inset 0 1px 0 ${color}15`
+            : `0 2px 8px -2px ${color}12, inset 0 1px 0 rgba(255,255,255,0.04)`,
         transform: hov ? "translateY(-3px)" : "translateY(0)",
         background: hov
           ? `linear-gradient(135deg, ${color}10 0%, transparent 55%)`
@@ -85,10 +88,19 @@ function HoverCard({ color, children, className = "", onClick }: {
     >
       {/* Top accent line */}
       <div className="absolute top-0 inset-x-0 h-[2px] rounded-t-2xl"
-        style={{ background: `linear-gradient(90deg, ${color}, ${color}00)` }} />
+        style={{ background: alert ? "linear-gradient(90deg, #f59e0b, #f59e0b00)" : `linear-gradient(90deg, ${color}, ${color}00)` }} />
+      {/* Alert pulse dot */}
+      {alert && (
+        <div className="absolute top-2.5 right-2.5 z-10">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
+          </span>
+        </div>
+      )}
       {/* Corner glow orb */}
       <div className="absolute -top-6 -right-6 h-16 w-16 rounded-full blur-2xl pointer-events-none"
-        style={{ backgroundColor: `${color}25`, opacity: hov ? 1 : 0.5, transition: "opacity 0.22s" }} />
+        style={{ backgroundColor: alert ? "#f59e0b25" : `${color}25`, opacity: hov ? 1 : 0.5, transition: "opacity 0.22s" }} />
       <div className="relative">{children}</div>
     </div>
   );
@@ -96,10 +108,11 @@ function HoverCard({ color, children, className = "", onClick }: {
 
 // ─── Glance grid ─────────────────────────────────────────────────────────────
 
-function GlanceGrid({ mood, weeklyPct, workouts }: {
+function GlanceGrid({ mood, weeklyPct, workouts, moodAlert }: {
   mood: { moodScore: number } | null;
   weeklyPct: number | null;
   workouts: WorkoutDay[];
+  moodAlert: boolean;
 }) {
   const today = localToday();
   const workedOut = workouts.some((w) => w.date === today);
@@ -109,11 +122,13 @@ function GlanceGrid({ mood, weeklyPct, workouts }: {
       href: "/mood", label: "Mood", icon: Heart, color: "#f43f5e",
       value: mood ? `${closestEmoji(mood.moodScore)} ${mood.moodScore}/10` : "—",
       sub: mood ? "today's check-in" : "not logged yet",
+      alert: moodAlert,
     },
     {
       href: "/habits", label: "Habits", icon: Target, color: "#8b5cf6",
       value: weeklyPct === null ? "—" : `${weeklyPct}%`,
       sub: weeklyPct === null ? "no habits yet" : "this week",
+      alert: false,
     },
     {
       href: "/fitness", label: "Fitness", icon: Activity, color: "#10b981",
@@ -123,14 +138,15 @@ function GlanceGrid({ mood, weeklyPct, workouts }: {
     {
       href: "/finance", label: "Finance", icon: DollarSign, color: "#f59e0b",
       value: "→", sub: "view finances",
+      alert: false,
     },
-  ] as const;
+  ];
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {cards.map(({ href, label, icon: Icon, color, value, sub }) => (
+      {cards.map(({ href, label, icon: Icon, color, value, sub, alert }) => (
         <Link key={href} href={href}>
-          <HoverCard color={color} className="p-4 cursor-pointer">
+          <HoverCard color={color} className="p-4 cursor-pointer" alert={alert}>
             <div className="flex flex-col gap-2.5">
               <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
                 style={{ backgroundColor: `${color}18`, boxShadow: `inset 0 0 0 1px ${color}28` }}>
@@ -145,6 +161,142 @@ function GlanceGrid({ mood, weeklyPct, workouts }: {
           </HoverCard>
         </Link>
       ))}
+    </div>
+  );
+}
+
+// ─── Habit stack widget ───────────────────────────────────────────────────────
+
+function HabitStackWidget({ habits, initialLogs, onLog, isEvening }: {
+  habits: Habit[];
+  initialLogs: Map<number, string>;
+  onLog: (id: number, status: "completed" | "skipped") => void;
+  isEvening: boolean;
+}) {
+  const [loggedIds, setLoggedIds] = useState<Set<number>>(new Set(initialLogs.keys()));
+  const [exiting, setExiting] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLoggedIds(new Set(initialLogs.keys()));
+  }, [initialLogs.size]);
+
+  if (habits.length === 0) return null;
+
+  const pending = habits.filter(h => !loggedIds.has(h.id));
+  const doneCount = habits.length - pending.length;
+  const allDone = pending.length === 0;
+  const top = pending[0];
+  const C = top?.color ?? "#8b5cf6";
+
+  function log(id: number, status: "completed" | "skipped") {
+    setExiting(id);
+    setTimeout(() => {
+      setLoggedIds(p => new Set([...p, id]));
+      setExiting(null);
+    }, 260);
+    onLog(id, status);
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {/* Header row */}
+      <div className="flex items-center justify-between px-0.5">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Today's Habits</p>
+        <div className="flex items-center gap-2.5">
+          {isEvening && !allDone && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-400">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400" />
+              </span>
+              day ending
+            </span>
+          )}
+          <span className="text-[10px] text-muted-foreground tabular-nums">{doneCount}/{habits.length}</span>
+        </div>
+      </div>
+
+      {allDone ? (
+        /* All done state */
+        <div className="rounded-2xl border px-4 py-3.5 flex items-center gap-3"
+          style={{ backgroundColor: "#10b98108", borderColor: "#10b98128" }}>
+          <div className="h-7 w-7 rounded-xl flex items-center justify-center shrink-0"
+            style={{ backgroundColor: "#10b98120" }}>
+            <span className="text-sm">✓</span>
+          </div>
+          <p className="text-sm font-semibold" style={{ color: "#10b981" }}>All habits done for today</p>
+        </div>
+      ) : (
+        /* Card stack */
+        <div className="relative" style={{ height: 68 }}>
+          {/* Ghost cards behind (depth illusion) */}
+          {pending.slice(1, 3).map((h, idx) => {
+            const depth = idx + 1;
+            return (
+              <div key={h.id} style={{
+                position: "absolute", inset: 0,
+                transform: `translateY(${depth * 6}px) scale(${1 - depth * 0.035})`,
+                zIndex: 3 - depth,
+                borderRadius: 16,
+                backgroundColor: `${h.color}07`,
+                border: `1px solid ${h.color}18`,
+              }} />
+            );
+          })}
+
+          {/* Top card */}
+          {top && (
+            <div style={{
+              position: "absolute", inset: 0, zIndex: 10,
+              borderRadius: 16,
+              borderLeft: `3px solid ${C}`,
+              borderTop: `1px solid ${C}2a`,
+              borderRight: `1px solid ${C}2a`,
+              borderBottom: `1px solid ${C}2a`,
+              background: `linear-gradient(135deg, ${C}0c 0%, transparent 55%)`,
+              opacity: exiting === top.id ? 0 : 1,
+              transform: exiting === top.id ? "translateY(-10px) scale(0.97)" : "translateY(0) scale(1)",
+              transition: "opacity 0.22s ease, transform 0.22s ease",
+            }}
+              className="bg-card flex items-center gap-3 px-4"
+            >
+              {/* Color dot */}
+              <div className="h-2.5 w-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: C, outline: `2px solid ${C}30`, outlineOffset: 2 }} />
+
+              {/* Name + count */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold leading-tight truncate">{top.name}</p>
+                {pending.length > 1 && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{pending.length - 1} more</p>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => log(top.id, "skipped")}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-lg hover:bg-muted/60"
+                >
+                  skip
+                </button>
+                <button
+                  onClick={() => log(top.id, "completed")}
+                  style={{
+                    backgroundColor: `${C}20`,
+                    color: C,
+                    border: `1px solid ${C}45`,
+                    boxShadow: `0 0 12px ${C}20`,
+                  }}
+                  className="flex items-center justify-center text-sm font-bold h-9 w-9 rounded-xl transition-all hover:scale-110 active:scale-95"
+                >
+                  ✓
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -834,6 +986,7 @@ export default function DashboardPage() {
   const today = localToday();
   const [mood, setMood]               = useState<{moodScore:number}|null>(null);
   const [habits, setHabits]           = useState<Habit[]>([]);
+  const [todayHabitLogs, setTodayHabitLogs] = useState<Map<number,string>>(new Map());
   const [weekCounts, setWeekCounts]   = useState<Record<number,number>>({});
   const [sprintIssues, setSprintIssues] = useState<AnyIssue[]>([]);
   const [allIssues, setAllIssues]     = useState<AnyIssue[]>([]);
@@ -867,6 +1020,13 @@ export default function DashboardPage() {
         const wc:Record<number,number>={};
         (Array.isArray(weekData)?weekData:[]).forEach((r:WeekCount)=>{wc[r.habitId]=r.doneThisWeek;});
         setWeekCounts(wc);
+        const h2:Habit[]=Array.isArray(habitsData)?habitsData:[];
+        if(h2.length>0){
+          const todayLogs=await Promise.all(h2.map((hb:Habit)=>fetch(`/api/habits/${hb.id}/log`).then(r=>r.ok?r.json():null)));
+          const map=new Map<number,string>();
+          todayLogs.forEach((log:TodayLog|null,i)=>{if(log?.logStatus)map.set(h2[i].id,log.logStatus);});
+          setTodayHabitLogs(map);
+        }
       }catch(err){console.error("Dashboard load error:",err);}
       finally{setLoading(false);}
     }
@@ -877,6 +1037,11 @@ export default function DashboardPage() {
     await fetch(`/api/issues/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});
     setSprintIssues(p=>p.map(i=>i.id===id?{...i,status}:i));
     setAllIssues(p=>p.map(i=>i.id===id?{...i,status}:i));
+  }
+  function logHabit(habitId:number, status:"completed"|"skipped"){
+    const completed=status==="completed";
+    if(completed) setWeekCounts(p=>({...p,[habitId]:(p[habitId]??0)+1}));
+    fetch(`/api/habits/${habitId}/log`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date:today,completed,logStatus:status})});
   }
   function confirmDone(choice:"completed"|"cancelled"){
     if(!pendingDone) return;
@@ -892,6 +1057,7 @@ export default function DashboardPage() {
   const now=new Date(), startOfYear=new Date(now.getFullYear(),0,0);
   const dayOfYear=Math.floor((now.getTime()-startOfYear.getTime())/86400000);
   const daysLeft=365-dayOfYear;
+  const isEvening=now.getHours()>=20;
   const weeklyPct = useMemo(()=>{
     if(habits.length===0) return null;
     const target=habits.reduce((s,h)=>s+h.targetDaysPerWeek,0);
@@ -935,7 +1101,17 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Glance grid */}
-            <GlanceGrid mood={mood} weeklyPct={weeklyPct} workouts={workouts}/>
+            <GlanceGrid mood={mood} weeklyPct={weeklyPct} workouts={workouts} moodAlert={isEvening && !mood}/>
+
+            {/* Habit stack */}
+            {habits.length > 0 && (
+              <HabitStackWidget
+                habits={habits}
+                initialLogs={todayHabitLogs}
+                onLog={logHabit}
+                isEvening={isEvening}
+              />
+            )}
 
             {/* Board */}
             <CollapsibleSection id="board" title="Board" icon={<LayoutDashboard className="h-4 w-4 text-violet-400"/>}>
