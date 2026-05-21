@@ -1,3 +1,4 @@
+export const revalidate = 30;
 import { NextResponse } from "next/server";
 import { db, workoutSessions } from "@/lib/db";
 import { count, gte, sql } from "drizzle-orm";
