@@ -37,6 +37,9 @@ export async function middleware(request: NextRequest) {
 
   const role = user.user_metadata?.role as string | undefined;
 
+  // API routes handle their own auth — never redirect them
+  if (pathname.startsWith("/api/")) return supabaseResponse;
+
   // Admin users → only /admin routes allowed
   if (role === "admin") {
     if (!pathname.startsWith("/admin")) {
