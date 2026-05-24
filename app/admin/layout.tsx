@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Target, Heart, Activity, Layers, MessageCircle,
-  Sparkles, LogOut, Settings, HelpCircle, Menu, Users,
+  LogOut, Settings, HelpCircle, Menu, Users,
 } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 
@@ -106,17 +107,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             title={collapsed ? "Expand" : "Collapse"}>
             <Menu className="h-4 w-4" />
           </button>
-          {!collapsed && (
-            <>
-              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
-                <p className="text-[10px] text-muted-foreground leading-none mt-0.5">admin panel</p>
-              </div>
-            </>
-          )}
+          {!collapsed && <Logo size={28} subtitle="admin panel" />}
         </div>
 
         {/* Nav */}

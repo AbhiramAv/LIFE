@@ -49,101 +49,96 @@
 
 /* ─── Light Mode ──────────────────────────────────────────────────────────── */
 :root {
-  /* Distinct lavender-grey base — cards (white) pop clearly against it */
-  --background: oklch(0.92 0.028 285);
-  --foreground: oklch(0.1 0.025 285);
+  --background:   #FFF9EE;
+  --foreground:   #071827;
 
-  --card: oklch(0.99 0.004 285);
-  --card-foreground: oklch(0.1 0.025 285);
+  --card:            #FFFFFF;
+  --card-foreground: #071827;
 
-  --popover: oklch(0.99 0.004 285);
-  --popover-foreground: oklch(0.1 0.025 285);
+  --popover:            #FFFFFF;
+  --popover-foreground: #071827;
 
-  /* Violet primary — richer in light mode */
-  --primary: oklch(0.52 0.25 285);
-  --primary-foreground: oklch(0.99 0 0);
+  --primary:            #073B35;
+  --primary-foreground: #F8FFF7;
 
-  --secondary: oklch(0.88 0.035 285);
-  --secondary-foreground: oklch(0.25 0.06 285);
+  --secondary:            #E6F7F1;
+  --secondary-foreground: #071827;
 
-  --muted: oklch(0.89 0.025 285);
-  --muted-foreground: oklch(0.42 0.06 285);
+  --muted:            #F4EDDF;
+  --muted-foreground: #63756F;
 
-  --accent: oklch(0.88 0.035 285);
-  --accent-foreground: oklch(0.25 0.06 285);
+  --accent:            #31D7D0;
+  --accent-foreground: #071827;
 
-  --destructive: oklch(0.55 0.26 25);
+  --destructive: #FF766E;
 
-  --border: oklch(0.82 0.04 285);
-  --input: oklch(0.86 0.03 285);
-  --ring: oklch(0.52 0.25 285);
+  --border: #E8DDC8;
+  --input:  #E8DDC8;
+  --ring:   #FFC85A;
 
-  /* Domain accent chart colors */
-  --chart-1: oklch(0.58 0.26 358);   /* rose  — mood */
-  --chart-2: oklch(0.52 0.25 285);   /* violet — habits */
-  --chart-3: oklch(0.5 0.2 162);     /* emerald — fitness */
-  --chart-4: oklch(0.65 0.2 75);     /* amber — finance */
-  --chart-5: oklch(0.52 0.22 232);   /* sky — misc */
+  /* Chart / domain colors */
+  --chart-1: #FFC85A;   /* Mood    — Life Gold   */
+  --chart-2: #31D7D0;   /* Habits  — Signal Teal */
+  --chart-3: #FF766E;   /* Goals   — Living Coral */
+  --chart-4: #5BB7FF;   /* Fitness — Fresh Sky   */
+  --chart-5: #2FD184;   /* Finance — Green       */
 
   --radius: 0.75rem;
 
-  /* Sidebar: darker than bg so it reads as a distinct panel */
-  --sidebar: oklch(0.86 0.04 285);
-  --sidebar-foreground: oklch(0.18 0.04 285);
-  --sidebar-primary: oklch(0.52 0.25 285);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.82 0.045 285);
-  --sidebar-accent-foreground: oklch(0.18 0.04 285);
-  --sidebar-border: oklch(0.78 0.05 285);
-  --sidebar-ring: oklch(0.52 0.25 285);
+  --sidebar:            #F5EADA;
+  --sidebar-foreground: #071827;
+  --sidebar-primary:    #073B35;
+  --sidebar-primary-foreground: #F8FFF7;
+  --sidebar-accent:     #E8DDC8;
+  --sidebar-accent-foreground: #071827;
+  --sidebar-border:     #DDD0B8;
+  --sidebar-ring:       #FFC85A;
 }
 
 /* ─── Dark Mode ───────────────────────────────────────────────────────────── */
 .dark {
-  --background: oklch(0.08 0.014 285);
-  --foreground: oklch(0.95 0.008 285);
+  --background:   #06131D;
+  --foreground:   #F8FFF7;
 
-  --card: oklch(0.135 0.022 285);
-  --card-foreground: oklch(0.95 0.008 285);
+  --card:            #0B2530;
+  --card-foreground: #F8FFF7;
 
-  --popover: oklch(0.135 0.022 285);
-  --popover-foreground: oklch(0.95 0.008 285);
+  --popover:            #0B2530;
+  --popover-foreground: #F8FFF7;
 
-  /* Violet primary — brighter in dark */
-  --primary: oklch(0.68 0.24 285);
-  --primary-foreground: oklch(0.09 0.015 285);
+  --primary:            #FFC85A;
+  --primary-foreground: #071827;
 
-  --secondary: oklch(0.19 0.028 285);
-  --secondary-foreground: oklch(0.85 0.01 285);
+  --secondary:            #0E3A36;
+  --secondary-foreground: #F8FFF7;
 
-  --muted: oklch(0.17 0.024 285);
-  --muted-foreground: oklch(0.56 0.04 285);
+  --muted:            #102C34;
+  --muted-foreground: #9DB8B3;
 
-  --accent: oklch(0.19 0.028 285);
-  --accent-foreground: oklch(0.85 0.01 285);
+  --accent:            #31D7D0;
+  --accent-foreground: #071827;
 
-  --destructive: oklch(0.68 0.22 25);
+  --destructive: #FF766E;
 
-  /* Bumped from 0.2 — borders now legible against cards in dark mode */
-  --border: oklch(0.27 0.04 285);
-  --input: oklch(0.19 0.025 285);
-  --ring: oklch(0.68 0.24 285);
+  --border: #21404A;
+  --input:  #21404A;
+  --ring:   #31D7D0;
 
-  /* Domain accent chart colors — vivid in dark */
-  --chart-1: oklch(0.72 0.22 358);   /* rose */
-  --chart-2: oklch(0.72 0.22 285);   /* violet */
-  --chart-3: oklch(0.68 0.18 162);   /* emerald */
-  --chart-4: oklch(0.82 0.18 75);    /* amber */
-  --chart-5: oklch(0.7 0.2 232);     /* sky */
+  /* Chart / domain colors — slightly brightened for dark backgrounds */
+  --chart-1: #FFC85A;
+  --chart-2: #31D7D0;
+  --chart-3: #FF766E;
+  --chart-4: #5BB7FF;
+  --chart-5: #2FD184;
 
-  --sidebar: oklch(0.1 0.016 285);
-  --sidebar-foreground: oklch(0.88 0.01 285);
-  --sidebar-primary: oklch(0.68 0.24 285);
-  --sidebar-primary-foreground: oklch(0.09 0.015 285);
-  --sidebar-accent: oklch(0.17 0.022 285);
-  --sidebar-accent-foreground: oklch(0.88 0.01 285);
-  --sidebar-border: oklch(0.2 0.025 285);
-  --sidebar-ring: oklch(0.68 0.24 285);
+  --sidebar:            #071D28;
+  --sidebar-foreground: #F8FFF7;
+  --sidebar-primary:    #FFC85A;
+  --sidebar-primary-foreground: #071827;
+  --sidebar-accent:     #102C34;
+  --sidebar-accent-foreground: #F8FFF7;
+  --sidebar-border:     #21404A;
+  --sidebar-ring:       #31D7D0;
 }
 
 @layer base {
@@ -161,27 +156,30 @@
 /* ─── Utilities ───────────────────────────────────────────────────────────── */
 @layer utilities {
   .gradient-text {
-    @apply bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent;
+    background: linear-gradient(90deg, #31D7D0, #FFC85A);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .card-glow {
-    box-shadow: 0 0 0 1px var(--border), 0 4px 24px -4px oklch(0.58 0.22 285 / 0.08);
+    box-shadow: 0 0 0 1px var(--border), 0 4px 24px -4px #31D7D014;
   }
 
   .card-glow-mood {
-    box-shadow: 0 0 0 1px oklch(0.62 0.24 358 / 0.3), 0 4px 24px -4px oklch(0.62 0.24 358 / 0.15);
+    box-shadow: 0 0 0 1px #FFC85A4D, 0 4px 24px -4px #FFC85A26;
   }
 
   .card-glow-habits {
-    box-shadow: 0 0 0 1px oklch(0.58 0.22 285 / 0.3), 0 4px 24px -4px oklch(0.58 0.22 285 / 0.15);
+    box-shadow: 0 0 0 1px #31D7D04D, 0 4px 24px -4px #31D7D026;
   }
 
   .card-glow-fitness {
-    box-shadow: 0 0 0 1px oklch(0.56 0.18 162 / 0.3), 0 4px 24px -4px oklch(0.56 0.18 162 / 0.15);
+    box-shadow: 0 0 0 1px #5BB7FF4D, 0 4px 24px -4px #5BB7FF26;
   }
 
   .card-glow-finance {
-    box-shadow: 0 0 0 1px oklch(0.75 0.18 75 / 0.3), 0 4px 24px -4px oklch(0.75 0.18 75 / 0.15);
+    box-shadow: 0 0 0 1px #2FD1844D, 0 4px 24px -4px #2FD18426;
   }
 
   .noise {

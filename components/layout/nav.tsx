@@ -5,22 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Heart, Target, Activity, DollarSign,
-  Layers, Sparkles, Camera, CalendarDays, Menu, X,
+  Layers, Camera, CalendarDays, Menu, X,
   LogOut, Settings, HelpCircle, User,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import type { User as SBUser } from "@supabase/supabase-js";
+import { Logo } from "@/components/brand/logo";
 
 export const NAV_LINKS = [
-  { href: "/",         label: "Dashboard", icon: LayoutDashboard, color: "#8b5cf6" },
-  { href: "/mood",     label: "Mood",       icon: Heart,           color: "#f43f5e" },
-  { href: "/habits",   label: "Habits",     icon: Target,          color: "#8b5cf6" },
-  { href: "/fitness",  label: "Fitness",    icon: Activity,        color: "#10b981" },
-  { href: "/finance",  label: "Finance",    icon: DollarSign,      color: "#f59e0b" },
-  { href: "/goals",    label: "Goals",      icon: Layers,          color: "#0ea5e9" },
-  { href: "/calendar", label: "Calendar",   icon: CalendarDays,    color: "#6366f1" },
-  { href: "/memories", label: "Memories",   icon: Camera,          color: "#d946ef" },
+  { href: "/",         label: "Dashboard", icon: LayoutDashboard, color: "#31D7D0" },
+  { href: "/mood",     label: "Mood",       icon: Heart,           color: "#FFC85A" },
+  { href: "/habits",   label: "Habits",     icon: Target,          color: "#31D7D0" },
+  { href: "/fitness",  label: "Fitness",    icon: Activity,        color: "#5BB7FF" },
+  { href: "/finance",  label: "Finance",    icon: DollarSign,      color: "#2FD184" },
+  { href: "/goals",    label: "Goals",      icon: Layers,          color: "#FF766E" },
+  { href: "/calendar", label: "Calendar",   icon: CalendarDays,    color: "#A77BFF" },
+  { href: "/memories", label: "Memories",   icon: Camera,          color: "#A77BFF" },
 ];
 
 function NavLinks({ pathname, collapsed, onLinkClick }: {
@@ -152,17 +153,7 @@ export function Nav() {
             title={collapsed ? "Expand" : "Collapse"}>
             <Menu className="h-4 w-4" />
           </button>
-          {!collapsed && (
-            <>
-              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
-                <p className="text-[10px] text-muted-foreground leading-none mt-0.5">lifetime dashboard</p>
-              </div>
-            </>
-          )}
+          {!collapsed && <Logo size={28} />}
         </div>
         <NavLinks pathname={pathname} collapsed={collapsed} />
         <UserSection collapsed={collapsed} />
@@ -179,15 +170,7 @@ export function Nav() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="relative w-64 bg-sidebar border-r border-border flex flex-col min-h-full shadow-2xl">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
-              <div className="flex items-center gap-2.5">
-                <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                  <Sparkles className="h-3.5 w-3.5 text-primary-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
-                  <p className="text-[10px] text-muted-foreground leading-none mt-0.5">lifetime dashboard</p>
-                </div>
-              </div>
+              <Logo size={28} />
               <button onClick={() => setMobileOpen(false)}
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                 <X className="h-4 w-4" />
