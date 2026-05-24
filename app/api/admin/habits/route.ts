@@ -1,7 +1,7 @@
-export const revalidate = 30;
-import { NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
+import { NextRequest, NextResponse } from "next/server";
 import { db, habits, habitLogs } from "@/lib/db";
-import { count, gte, eq, sql } from "drizzle-orm";
+import { count, gte, eq, and, sql } from "drizzle-orm";
 import { getUser, unauthorized } from "@/lib/supabase/get-user";
 
 function adminOnly(role?: string) {
@@ -13,13 +13,20 @@ function daysAgo(n: number) {
   return d.toISOString().split("T")[0];
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await getUser();
   if (!user) return unauthorized();
   const guard = adminOnly(user.user_metadata?.role);
   if (guard) return guard;
 
+  const userId  = req.nextUrl.searchParams.get("userId") ?? undefined;
   const cutoff30 = daysAgo(30);
+
+  const habitWhere    = userId ? eq(habits.userId, userId)    : undefined;
+  const logWhere      = userId
+    ? and(eq(habitLogs.userId, userId), gte(habitLogs.date, cutoff30))
+    : gte(habitLogs.date, cutoff30);
+  const logWhereAll   = userId ? eq(habitLogs.userId, userId) : undefined;
 
   const [
     [{ total: totalHabits }],
@@ -27,18 +34,19 @@ export async function GET() {
     dailyLogs,
     topGoals,
   ] = await Promise.all([
-    db.select({ total: count() }).from(habits),
-    db.select({ total: count() }).from(habitLogs).where(gte(habitLogs.date, cutoff30)),
+    db.select({ total: count() }).from(habits).where(habitWhere),
+    db.select({ total: count() }).from(habitLogs).where(logWhere),
     db.select({
-      date: habitLogs.date,
+      date:      habitLogs.date,
       completed: sql<number>`SUM(CASE WHEN ${habitLogs.completed} = true THEN 1 ELSE 0 END)`.as("completed"),
-      skipped: sql<number>`SUM(CASE WHEN ${habitLogs.logStatus} = 'skipped' THEN 1 ELSE 0 END)`.as("skipped"),
-    }).from(habitLogs).where(gte(habitLogs.date, cutoff30))
+      skipped:   sql<number>`SUM(CASE WHEN ${habitLogs.logStatus} = 'skipped' THEN 1 ELSE 0 END)`.as("skipped"),
+    }).from(habitLogs).where(logWhere)
       .groupBy(habitLogs.date).orderBy(habitLogs.date),
     db.select({
-      goal: habits.biggerGoal,
+      goal:  habits.biggerGoal,
       count: count(),
-    }).from(habits).where(sql`${habits.biggerGoal} IS NOT NULL`)
+    }).from(habits)
+      .where(habitWhere ? and(habitWhere, sql`${habits.biggerGoal} IS NOT NULL`) : sql`${habits.biggerGoal} IS NOT NULL`)
       .groupBy(habits.biggerGoal).orderBy(sql`count(*) DESC`).limit(8),
   ]);
 

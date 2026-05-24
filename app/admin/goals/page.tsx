@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { UserFilter } from "@/components/admin/user-filter";
 
 type Data = {
   totalProjects: number; totalIssues: number;
-  issuesByStatus: { status: string; count: number }[];
-  projectsByCategory: { category: string; count: number }[];
+  issuesByStatus:      { status: string; count: number }[];
+  projectsByCategory:  { category: string; count: number }[];
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -14,28 +16,22 @@ const STATUS_COLORS: Record<string, string> = {
   done: "#10b981", cancelled: "#f43f5e", skipped: "#6b7280", backlog: "#8b5cf6",
 };
 
-export default function AdminGoalsPage() {
+function GoalsContent() {
+  const searchParams = useSearchParams();
+  const userId = searchParams.get("userId") ?? "";
   const [data, setData] = useState<Data | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/goals").then(r => r.json()).then(setData);
-  }, []);
+    const url = userId ? `/api/admin/goals?userId=${userId}` : "/api/admin/goals";
+    setData(null);
+    fetch(url).then(r => r.json()).then(setData);
+  }, [userId]);
 
-  const statusData = (data?.issuesByStatus ?? []).map(r => ({
-    status: r.status, count: Number(r.count), color: STATUS_COLORS[r.status] ?? "#6b7280",
-  }));
-
-  const categoryData = (data?.projectsByCategory ?? []).map(r => ({
-    category: r.category, count: Number(r.count),
-  }));
+  const statusData   = (data?.issuesByStatus ?? []).map(r => ({ status: r.status, count: Number(r.count), color: STATUS_COLORS[r.status] ?? "#6b7280" }));
+  const categoryData = (data?.projectsByCategory ?? []).map(r => ({ category: r.category, count: Number(r.count) }));
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Aggregate projects and tickets across all users</p>
-      </div>
-
+    <>
       <div className="grid grid-cols-2 gap-4">
         {[
           { label: "Total projects", value: data?.totalProjects, color: "#0ea5e9" },
@@ -60,9 +56,7 @@ export default function AdminGoalsPage() {
                 <YAxis tick={{ fontSize: 9 }} width={25} allowDecimals={false} />
                 <Tooltip />
                 <Bar dataKey="count" radius={[4,4,0,0]}>
-                  {statusData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
+                  {statusData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -89,6 +83,23 @@ export default function AdminGoalsPage() {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+export default function AdminGoalsPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Projects and tickets across all users</p>
+        </div>
+        <UserFilter />
+      </div>
+      <Suspense>
+        <GoalsContent />
+      </Suspense>
     </div>
   );
 }

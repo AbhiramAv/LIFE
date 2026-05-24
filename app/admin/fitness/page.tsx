@@ -1,36 +1,37 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { UserFilter } from "@/components/admin/user-filter";
 
 type Data = {
   total: number; avgDuration: number;
   daily: { date: string; sessions: number; avgDuration: number }[];
 };
 
-export default function AdminFitnessPage() {
+function FitnessContent() {
+  const searchParams = useSearchParams();
+  const userId = searchParams.get("userId") ?? "";
   const [data, setData] = useState<Data | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/fitness").then(r => r.json()).then(setData);
-  }, []);
+    const url = userId ? `/api/admin/fitness?userId=${userId}` : "/api/admin/fitness";
+    setData(null);
+    fetch(url).then(r => r.json()).then(setData);
+  }, [userId]);
 
   const chartData = (data?.daily ?? []).map(d => ({
-    date: d.date.slice(5),
+    date:     d.date.slice(5),
     Sessions: Number(d.sessions),
   }));
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Fitness</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Aggregate workout data across all users</p>
-      </div>
-
+    <>
       <div className="grid grid-cols-2 gap-4">
         {[
-          { label: "Total sessions",  value: data?.total,       color: "#10b981" },
-          { label: "Avg duration",    value: data?.avgDuration ? `${data.avgDuration} min` : "—", color: "#f59e0b" },
+          { label: "Total sessions", value: data?.total,       color: "#10b981" },
+          { label: "Avg duration",   value: data?.avgDuration ? `${data.avgDuration} min` : "—", color: "#f59e0b" },
         ].map(({ label, value, color }) => (
           <div key={label} className="rounded-xl border border-border bg-card p-5">
             <p className="text-2xl font-bold" style={{ color }}>{value ?? "—"}</p>
@@ -54,6 +55,23 @@ export default function AdminFitnessPage() {
           </ResponsiveContainer>
         )}
       </div>
+    </>
+  );
+}
+
+export default function AdminFitnessPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Fitness</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Workout data across all users</p>
+        </div>
+        <UserFilter />
+      </div>
+      <Suspense>
+        <FitnessContent />
+      </Suspense>
     </div>
   );
 }

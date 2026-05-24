@@ -1,34 +1,35 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { UserFilter } from "@/components/admin/user-filter";
 
 type Data = {
   total: number; avgMood: number; avgEnergy: number; avgStress: number;
   daily: { date: string; mood: number; energy: number; stress: number; entries: number }[];
 };
 
-export default function AdminMoodPage() {
+function MoodContent() {
+  const searchParams = useSearchParams();
+  const userId = searchParams.get("userId") ?? "";
   const [data, setData] = useState<Data | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/mood").then(r => r.json()).then(setData);
-  }, []);
+    const url = userId ? `/api/admin/mood?userId=${userId}` : "/api/admin/mood";
+    setData(null);
+    fetch(url).then(r => r.json()).then(setData);
+  }, [userId]);
 
   const chartData = (data?.daily ?? []).map(d => ({
-    date: d.date.slice(5),
-    Mood: Number(d.mood),
+    date:   d.date.slice(5),
+    Mood:   Number(d.mood),
     Energy: Number(d.energy),
     Stress: Number(d.stress),
   }));
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Mood</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Aggregate mood data across all users</p>
-      </div>
-
+    <>
       <div className="grid grid-cols-4 gap-4">
         {[
           { label: "Total check-ins", value: data?.total,     color: "#8b5cf6" },
@@ -61,6 +62,23 @@ export default function AdminMoodPage() {
           </ResponsiveContainer>
         )}
       </div>
+    </>
+  );
+}
+
+export default function AdminMoodPage() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Mood</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Mood data across all users</p>
+        </div>
+        <UserFilter />
+      </div>
+      <Suspense>
+        <MoodContent />
+      </Suspense>
     </div>
   );
 }
