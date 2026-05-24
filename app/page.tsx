@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -745,8 +745,8 @@ function DashboardTicketDialog({
 
 // ─── Issue card ───────────────────────────────────────────────────────────────
 
-function IssueCard({ issue, onDragStart, onDragEnd, onClick }: {
-  issue: AnyIssue; onDragStart:()=>void; onDragEnd:()=>void; onClick:()=>void;
+function IssueCard({ issue, onPointerDown }: {
+  issue: AnyIssue; onPointerDown: (e: React.PointerEvent) => void;
 }) {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
@@ -754,7 +754,8 @@ function IssueCard({ issue, onDragStart, onDragEnd, onClick }: {
   const [hov, setHov] = useState(false);
 
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}
+    <div
+      onPointerDown={onPointerDown}
       onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
       style={{
         borderTopColor: hov ? `${C}55` : `${C}28`,
@@ -765,6 +766,7 @@ function IssueCard({ issue, onDragStart, onDragEnd, onClick }: {
         transform: hov ? "translateY(-2px)" : "translateY(0)",
         background: hov ? `linear-gradient(135deg, ${C}08, transparent)` : undefined,
         transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
+        touchAction: "none",
       }}
       className="rounded-xl border bg-card p-3 space-y-2.5 cursor-grab active:cursor-grabbing select-none"
     >
@@ -781,16 +783,16 @@ function IssueCard({ issue, onDragStart, onDragEnd, onClick }: {
 
 const COL_STATUS: Record<string,string> = {todo:"todo",in_progress:"in_progress",done:"done"};
 
-function KanbanColumn({ title, color, columnKey, issues, onRequestDone, onStatusChange, onIssueClick, dragging, setDragging }: {
+function KanbanColumn({ title, color, columnKey, issues, onIssueClick, dragOver, containerRef, onCardPointerDown }: {
   title:string; color:string; columnKey:string; issues:AnyIssue[];
-  onRequestDone:(p:PendingDone)=>void; onStatusChange:(id:number,s:string)=>void;
   onIssueClick:(issue:AnyIssue)=>void;
-  dragging:DragInfo|null; setDragging:(d:DragInfo|null)=>void;
+  dragOver:boolean;
+  containerRef:React.RefObject<HTMLDivElement|null>;
+  onCardPointerDown:(issue:AnyIssue, e:React.PointerEvent)=>void;
 }) {
-  const [dragOver, setDragOver] = useState(false);
-
   return (
     <div
+      ref={containerRef}
       style={{
         backgroundColor: dragOver ? `${color}10` : `${color}04`,
         borderColor: dragOver ? `${color}40` : `${color}18`,
@@ -798,15 +800,6 @@ function KanbanColumn({ title, color, columnKey, issues, onRequestDone, onStatus
         transition: "all 0.15s ease",
       }}
       className="space-y-2 min-w-0 rounded-2xl border p-2"
-      onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-      onDragLeave={()=>setDragOver(false)}
-      onDrop={()=>{
-        setDragOver(false);
-        if (!dragging) return;
-        if (columnKey==="done") onRequestDone({id:dragging.id});
-        else onStatusChange(dragging.id, COL_STATUS[columnKey]??"todo");
-        setDragging(null);
-      }}
     >
       <div className="flex items-center gap-2 pb-1.5 px-1 border-b" style={{borderColor:`${color}25`}}>
         <div className="h-2 w-2 rounded-full shrink-0" style={{backgroundColor:color}} />
@@ -816,9 +809,7 @@ function KanbanColumn({ title, color, columnKey, issues, onRequestDone, onStatus
       <div className="space-y-2 pt-1">
         {issues.map(issue => (
           <IssueCard key={issue.id} issue={issue}
-            onDragStart={()=>setDragging({id:issue.id})}
-            onDragEnd={()=>setDragging(null)}
-            onClick={()=>onIssueClick(issue)}
+            onPointerDown={e=>onCardPointerDown(issue, e)}
           />
         ))}
         {issues.length===0 && (
@@ -836,10 +827,58 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
   onStatusChange:(id:number,s:string)=>void; onIssueClick:(issue:AnyIssue)=>void; onPlanSprint:()=>void;
 }) {
   const [dragging, setDragging] = useState<DragInfo|null>(null);
-  const todoIssues  = sprintIssues.filter(i=>["backlog","todo"].includes(i.status));
+  const [overCol, setOverCol]   = useState<string|null>(null);
+  const todoRef   = useRef<HTMLDivElement>(null);
+  const inProgRef = useRef<HTMLDivElement>(null);
+  const doneRef   = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<{x:number;y:number;id:number;issue:AnyIssue}|null>(null);
+
+  const colEntries: [string, React.RefObject<HTMLDivElement|null>][] = [
+    ["todo", todoRef], ["in_progress", inProgRef], ["done", doneRef],
+  ];
+
+  function getColAt(x:number, y:number): string|null {
+    for (const [key, ref] of colEntries) {
+      const r = ref.current?.getBoundingClientRect();
+      if (r && x>=r.left && x<=r.right && y>=r.top && y<=r.bottom) return key;
+    }
+    return null;
+  }
+
+  function handleCardPointerDown(issue:AnyIssue, e:React.PointerEvent) {
+    dragStart.current = { x:e.clientX, y:e.clientY, id:issue.id, issue };
+    setDragging({ id:issue.id });
+  }
+
+  useEffect(() => {
+    if (!dragging) return;
+    function onMove(e:PointerEvent) { setOverCol(getColAt(e.clientX, e.clientY)); }
+    function onUp(e:PointerEvent) {
+      const s = dragStart.current;
+      if (s) {
+        const moved = Math.abs(e.clientX-s.x)>8 || Math.abs(e.clientY-s.y)>8;
+        if (!moved) {
+          onIssueClick(s.issue);
+        } else {
+          const col = getColAt(e.clientX, e.clientY);
+          if (col) {
+            if (col==="done") onRequestDone({id:s.id});
+            else onStatusChange(s.id, COL_STATUS[col]??"todo");
+          }
+        }
+      }
+      dragStart.current = null;
+      setDragging(null);
+      setOverCol(null);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  }, [dragging]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const todoIssues   = sprintIssues.filter(i=>["backlog","todo"].includes(i.status));
   const inProgIssues = sprintIssues.filter(i=>["in_progress","in_review"].includes(i.status));
-  const doneIssues  = sprintIssues.filter(i=>DONE_STATUSES.includes(i.status));
-  const colProps = {onRequestDone,onStatusChange,onIssueClick,dragging,setDragging};
+  const doneIssues   = sprintIssues.filter(i=>DONE_STATUSES.includes(i.status));
 
   return (
     <div className="space-y-3">
@@ -854,9 +893,12 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        issues={todoIssues}   {...colProps} />
-          <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" issues={inProgIssues} {...colProps} />
-          <KanbanColumn title="Done"        color="#10b981" columnKey="done"        issues={doneIssues}   {...colProps} />
+          <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        issues={todoIssues}
+            onIssueClick={onIssueClick} dragOver={overCol==="todo"}        containerRef={todoRef}   onCardPointerDown={handleCardPointerDown} />
+          <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" issues={inProgIssues}
+            onIssueClick={onIssueClick} dragOver={overCol==="in_progress"} containerRef={inProgRef} onCardPointerDown={handleCardPointerDown} />
+          <KanbanColumn title="Done"        color="#10b981" columnKey="done"        issues={doneIssues}
+            onIssueClick={onIssueClick} dragOver={overCol==="done"}        containerRef={doneRef}   onCardPointerDown={handleCardPointerDown} />
         </div>
       )}
     </div>
