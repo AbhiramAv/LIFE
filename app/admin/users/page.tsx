@@ -58,18 +58,25 @@ function AddUserModal({ onClose, onAdded }: { onClose: () => void; onAdded: (u: 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true); setError("");
-    const res = await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, role }),
-    });
-    const json = await res.json();
-    if (!res.ok) { setError(json.error ?? "Failed"); setLoading(false); return; }
-    // Re-fetch to get full row with counts
-    const users = await fetch("/api/admin/users").then(r => r.json());
-    const added = users.find((u: UserRow) => u.id === json.id);
-    if (added) onAdded(added);
-    onClose();
+    try {
+      const res  = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Failed to create user"); return; }
+      onAdded({
+        id: json.id, email, name: name || null, role,
+        createdAt: new Date().toISOString(), lastSeen: new Date().toISOString(),
+        habitCount: 0, projectCount: 0, moodCount: 0,
+      });
+      onClose();
+    } catch {
+      setError("Network error — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -105,22 +112,28 @@ function EditUserModal({ user, onClose, onSaved }: { user: UserRow; onClose: () 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true); setError("");
     const body: Record<string, string> = {};
     if (name !== (user.name ?? "")) body.name = name;
     if (email !== user.email) body.email = email;
     if (role !== user.role) body.role = role;
     if (Object.keys(body).length === 0) { onClose(); return; }
 
-    const res = await fetch(`/api/admin/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok) { setError(json.error ?? "Failed"); setLoading(false); return; }
-    onSaved({ ...user, name: name || null, email, role });
-    onClose();
+    setLoading(true); setError("");
+    try {
+      const res  = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Failed to update user"); return; }
+      onSaved({ ...user, name: name || null, email, role });
+      onClose();
+    } catch {
+      setError("Network error — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -161,14 +174,19 @@ function DeleteModal({ user, onClose, onDeleted }: { user: UserRow; onClose: () 
 
   async function confirm() {
     setLoading(true); setError("");
-    const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const json = await res.json();
-      setError(json.error ?? "Failed");
-      setLoading(false); return;
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setError(json.error ?? "Failed to delete user"); return;
+      }
+      onDeleted();
+      onClose();
+    } catch {
+      setError("Network error — check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    onDeleted();
-    onClose();
   }
 
   return (
@@ -192,15 +210,20 @@ function DeleteModal({ user, onClose, onDeleted }: { user: UserRow; onClose: () 
 export default function AdminUsersPage() {
   const [users, setUsers]       = useState<UserRow[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [showAdd, setShowAdd]   = useState(false);
   const [editing, setEditing]   = useState<UserRow | null>(null);
   const [deleting, setDeleting] = useState<UserRow | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/users").then(r => r.json()).then(data => {
-      setUsers(data);
-      setLoading(false);
-    });
+    fetch("/api/admin/users")
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setUsers(data);
+        else setLoadError(data?.error ?? "Failed to load users");
+      })
+      .catch(() => setLoadError("Network error — could not load users."))
+      .finally(() => setLoading(false));
   }, []);
 
   const totalHabits   = users.reduce((s, u) => s + u.habitCount,   0);
@@ -228,6 +251,12 @@ export default function AdminUsersPage() {
           onClose={() => setDeleting(null)}
           onDeleted={() => setUsers(prev => prev.filter(u => u.id !== deleting.id))}
         />
+      )}
+
+      {loadError && (
+        <div className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm text-rose-400">
+          {loadError}
+        </div>
       )}
 
       <div className="flex items-start justify-between">

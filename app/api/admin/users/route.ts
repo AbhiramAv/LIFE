@@ -39,34 +39,39 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const user = await getUser();
-  if (!user) return unauthorized();
-  const guard = adminOnly(user.user_metadata?.role);
-  if (guard) return guard;
+  try {
+    const user = await getUser();
+    if (!user) return unauthorized();
+    const guard = adminOnly(user.user_metadata?.role);
+    if (guard) return guard;
 
-  const { email, password, name, role = "user" } = await req.json();
-  if (!email || !password) return NextResponse.json({ error: "Email and password required" }, { status: 400 });
+    const { email, password, name, role = "user" } = await req.json();
+    if (!email || !password) return NextResponse.json({ error: "Email and password required" }, { status: 400 });
 
-  const allowed = ["user", "dev", "admin"];
-  if (!allowed.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    const allowed = ["user", "dev", "admin"];
+    if (!allowed.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 });
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { name, role },
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name, role },
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  const now = new Date().toISOString();
-  await db.insert(userProfiles).values({
-    id: data.user.id,
-    email,
-    name: name ?? null,
-    role,
-    lastSeen: now,
-  }).onConflictDoNothing();
+    const now = new Date().toISOString();
+    await db.insert(userProfiles).values({
+      id: data.user.id,
+      email,
+      name: name ?? null,
+      role,
+      lastSeen: now,
+    }).onConflictDoNothing();
 
-  return NextResponse.json({ ok: true, id: data.user.id });
+    return NextResponse.json({ ok: true, id: data.user.id });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unexpected server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
