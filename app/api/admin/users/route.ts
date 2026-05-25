@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: data.user.id });
   } catch (e) {
+    console.error("[POST /api/admin/users]", e);
     const msg = e instanceof Error ? e.message : "Unexpected server error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
