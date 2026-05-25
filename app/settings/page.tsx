@@ -1,18 +1,46 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Check } from "lucide-react";
+import { Check, User, Palette, Shield, LogOut } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type Profile = { id: string; email: string; name: string | null; role: string; createdAt: string };
+
+function Section({ icon: Icon, title, children }: {
+  icon: React.ElementType; title: string; children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-border bg-muted/20">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+      </div>
+      <div className="divide-y divide-border">{children}</div>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-4">
+      <p className="text-sm font-medium text-muted-foreground w-32 shrink-0">{label}</p>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName]       = useState("");
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
+  const router  = useRouter();
+  const supabase = createClient();
+
   useEffect(() => {
     fetch("/api/user/profile").then(r => r.json()).then((p: Profile) => {
       setProfile(p);
@@ -34,72 +62,98 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  const initials = (name || profile?.email || "?")[0].toUpperCase();
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.push("/auth/login");
+  }
+
+  const displayName = name || profile?.email?.split("@")[0] || "—";
+  const initials    = displayName[0].toUpperCase();
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-10 space-y-10">
-      <div>
+    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      {/* Page header */}
+      <div className="pb-2">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Manage your profile and preferences</p>
       </div>
 
-      {/* Avatar + identity */}
-      <div className="flex items-center gap-5">
-        <div className="h-20 w-20 rounded-2xl bg-primary/20 flex items-center justify-center text-3xl font-bold text-primary shrink-0">
-          {initials}
-        </div>
-        <div>
-          <p className="text-xl font-bold">{name || profile?.email?.split("@")[0] || "—"}</p>
-          <p className="text-sm text-muted-foreground">{profile?.email}</p>
-          <span className="mt-1 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/15 text-primary capitalize">
-            {profile?.role}
+      {/* Profile section */}
+      <Section icon={User} title="Profile">
+        {/* Avatar identity */}
+        <div className="flex items-center gap-4 px-5 py-4">
+          <div className="h-14 w-14 rounded-2xl bg-primary/20 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold leading-tight truncate">{displayName}</p>
+            <p className="text-sm text-muted-foreground truncate">{profile?.email}</p>
+          </div>
+          <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-primary/15 text-primary capitalize shrink-0">
+            {profile?.role ?? "user"}
           </span>
         </div>
-      </div>
 
-      {/* Profile form */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-5">
-        <p className="text-sm font-semibold">Profile</p>
-        <form onSubmit={save} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Display name</label>
-            <Input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Your name"
-              className="text-base"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</label>
-            <Input value={profile?.email ?? ""} disabled className="text-base opacity-60" />
-            <p className="text-[11px] text-muted-foreground">Email cannot be changed here</p>
-          </div>
-          <Button type="submit" disabled={saving || !name.trim()} className="gap-2">
-            {saved ? <><Check className="h-3.5 w-3.5" /> Saved</> : saving ? "Saving…" : "Save changes"}
+        {/* Name field */}
+        <form onSubmit={save} className="flex items-center gap-3 px-5 py-4">
+          <p className="text-sm font-medium text-muted-foreground w-32 shrink-0">Display name</p>
+          <Input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Your name"
+            className="flex-1 h-8 text-sm"
+          />
+          <Button type="submit" size="sm" disabled={saving || !name.trim()} className="shrink-0 h-8 px-3 gap-1.5">
+            {saved ? <><Check className="h-3.5 w-3.5" /> Saved</> : saving ? "Saving…" : "Save"}
           </Button>
         </form>
-      </div>
 
-      {/* Appearance */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-        <p className="text-sm font-semibold">Appearance</p>
-        <div className="flex items-center justify-between">
-          <div>
+        {/* Email field (read-only) */}
+        <Row label="Email">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm truncate">{profile?.email ?? "—"}</p>
+            <p className="text-xs text-muted-foreground shrink-0">Cannot be changed</p>
+          </div>
+        </Row>
+
+        {/* Member since */}
+        <Row label="Member since">
+          <p className="text-sm text-muted-foreground">
+            {profile
+              ? new Date(profile.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+              : "—"}
+          </p>
+        </Row>
+      </Section>
+
+      {/* Appearance section */}
+      <Section icon={Palette} title="Appearance">
+        <div className="flex items-center gap-4 px-5 py-4">
+          <p className="text-sm font-medium text-muted-foreground w-32 shrink-0">Theme</p>
+          <div className="flex-1">
             <p className="text-sm font-medium">Dark mode</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Toggle between light and dark theme</p>
+            <p className="text-xs text-muted-foreground">Toggle light and dark theme</p>
           </div>
           <ThemeToggle />
         </div>
-      </div>
+      </Section>
 
-      {/* Account info */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-3">
-        <p className="text-sm font-semibold">Account</p>
-        <div className="text-xs text-muted-foreground space-y-1">
-          <p>Member since {profile ? new Date(profile.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—"}</p>
+      {/* Account section */}
+      <Section icon={Shield} title="Account">
+        <div className="flex items-center gap-4 px-5 py-4">
+          <p className="text-sm font-medium text-muted-foreground w-32 shrink-0">Role</p>
+          <p className="text-sm capitalize">{profile?.role ?? "—"}</p>
         </div>
-      </div>
+        <div className="px-5 py-4">
+          <button
+            onClick={signOut}
+            className="flex items-center gap-2 text-sm font-medium text-rose-500 hover:text-rose-400 transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </button>
+        </div>
+      </Section>
     </div>
   );
 }

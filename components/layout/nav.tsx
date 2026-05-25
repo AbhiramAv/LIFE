@@ -38,7 +38,7 @@ function NavLinks({ pathname, collapsed, onLinkClick }: {
               active ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
             } ${collapsed ? "justify-center px-2" : ""}`}
             style={active ? { backgroundColor: `${color}18`, borderLeft: `2px solid ${color}` } : {}}>
-            <Icon className="h-4 w-4 shrink-0" style={active ? { color } : {}} />
+            <Icon className="h-4 w-4 shrink-0" style={{ color: active ? color : `${color}70` }} />
             {!collapsed && <span>{label}</span>}
             {!collapsed && active && <div className="ml-auto h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />}
           </Link>

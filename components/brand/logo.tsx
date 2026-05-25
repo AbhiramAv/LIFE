@@ -11,7 +11,7 @@ export function Logo({ size = 28, showWordmark = true, subtitle = "lifetime dash
     <div className="flex items-center gap-2 min-w-0">
       <div
         className="shrink-0 overflow-hidden rounded-lg"
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, backgroundColor: "var(--sidebar)" }}
       >
         <Image
           src="/brand/life-signal-logo.png"
