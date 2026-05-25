@@ -256,16 +256,65 @@ function parseImport(raw: string) {
   return tasks.length > 0 ? { goal, tasks } : null;
 }
 
+const IMPORT_PROMPT = `Generate a project breakdown in this exact format so I can import it into my task tracker:
+
+# [Project Name]
+
+### [Task Title]
+**Priority:** High
+One sentence describing what this task involves.
+
+### [Another Task]
+**Priority:** Medium
+Brief description.
+
+Rules:
+- Priority must be one of: Critical, High, Medium, Low
+- Use ### for every ticket (one heading = one ticket)
+- Keep titles concise (under 10 words)
+- Include 5–15 tickets for a well-scoped project
+- Start with a # heading for the project name
+
+Replace [Project Name] and tasks with my actual goal: `;
+
+const SAMPLE_JSON = `{
+  "goal": "Launch personal website",
+  "tasks": [
+    { "title": "Design landing page wireframe", "priority": "high" },
+    { "title": "Set up Next.js project", "priority": "high" },
+    { "title": "Write about section copy", "priority": "medium" },
+    { "title": "Deploy to Vercel", "priority": "low" }
+  ]
+}`;
+
+const SAMPLE_MARKDOWN = `# Launch personal website
+
+### Design landing page wireframe
+**Priority:** High
+Sketch the layout and component hierarchy before writing any code.
+
+### Set up Next.js project
+**Priority:** High
+Scaffold the repo, configure Tailwind, and push initial commit.
+
+### Write about section copy
+**Priority:** Medium
+
+### Deploy to Vercel
+**Priority:** Low`;
+
 function ImportModal({ onImported, onClose }: { onImported: (p: Project) => void; onClose: () => void }) {
-  const [text, setText] = useState("");
+  const [tab, setTab]     = useState<"paste"|"format"|"prompt">("paste");
+  const [text, setText]   = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const preview = text.trim() ? parseImport(text) : null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!preview) { setError("Could not detect a goal title + task list. See accepted formats below."); return; }
+    if (!preview) { setError("Could not detect a goal title + task list."); return; }
     setSaving(true);
     try {
       const res = await fetch("/api/goals/import", {
@@ -283,42 +332,101 @@ function ImportModal({ onImported, onClose }: { onImported: (p: Project) => void
     }
   }
 
+  function copyPrompt() {
+    navigator.clipboard.writeText(IMPORT_PROMPT);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const TABS = [
+    { id: "paste",  label: "Paste" },
+    { id: "format", label: "Format guide" },
+    { id: "prompt", label: "Get AI prompt" },
+  ] as const;
+
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-0">
         <p className="text-sm font-semibold">Import project</p>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
 
-      <form onSubmit={submit} className="space-y-3">
-        <Textarea
-          value={text}
-          onChange={(e) => { setText(e.target.value); setError(""); }}
-          placeholder={"Paste AI output, markdown, or JSON. Accepted formats:\n\n# Project name\n- Task one\n- Task two\n1. Task three\n\nor {\"goal\":\"...\",\"tasks\":[{\"title\":\"...\"}]}"}
-          className="font-mono text-xs min-h-[160px]"
-          autoFocus
-        />
+      {/* Tabs */}
+      <div className="flex gap-0 px-4 mt-3 border-b border-border">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
+              tab === t.id
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Live parse preview */}
-        {text.trim() && (
-          <div className={`rounded-lg px-3 py-2.5 text-xs space-y-0.5 border ${preview ? "bg-emerald-500/8 border-emerald-500/20" : "bg-rose-500/8 border-rose-500/20"}`}>
-            {preview ? (
-              <>
-                <p className="font-semibold text-emerald-400">✓ Ready to import</p>
-                <p className="text-muted-foreground">Goal: <span className="text-foreground font-medium">{preview.goal}</span></p>
-                <p className="text-muted-foreground">{preview.tasks.length} ticket{preview.tasks.length !== 1 ? "s" : ""} detected</p>
-              </>
-            ) : (
-              <p className="text-rose-400">Could not detect a goal + tasks. Use <code className="bg-muted px-1 rounded"># Title</code> and <code className="bg-muted px-1 rounded">- tasks</code> or numbered lists.</p>
+      <div className="p-4">
+        {/* ── Paste tab ── */}
+        {tab === "paste" && (
+          <form onSubmit={submit} className="space-y-3">
+            <Textarea
+              value={text}
+              onChange={(e) => { setText(e.target.value); setError(""); }}
+              placeholder={"Paste markdown, JSON, or AI output here…"}
+              className="font-mono text-xs min-h-[160px]"
+              autoFocus
+            />
+            {text.trim() && (
+              <div className={`rounded-lg px-3 py-2.5 text-xs space-y-0.5 border ${preview ? "bg-emerald-500/8 border-emerald-500/20" : "bg-rose-500/8 border-rose-500/20"}`}>
+                {preview ? (
+                  <>
+                    <p className="font-semibold text-emerald-400">✓ Ready to import</p>
+                    <p className="text-muted-foreground">Project: <span className="text-foreground font-medium">{preview.goal}</span></p>
+                    <p className="text-muted-foreground">{preview.tasks.length} ticket{preview.tasks.length !== 1 ? "s" : ""} detected</p>
+                  </>
+                ) : (
+                  <p className="text-rose-400">Could not parse. Switch to <strong>Format guide</strong> to see accepted formats.</p>
+                )}
+              </div>
             )}
+            {error && <p className="text-xs text-rose-400">{error}</p>}
+            <Button type="submit" size="sm" className="w-full" disabled={saving || !preview}>
+              {saving ? "Importing…" : `Create project${preview ? ` (${preview.tasks.length} tickets)` : ""}`}
+            </Button>
+          </form>
+        )}
+
+        {/* ── Format guide tab ── */}
+        {tab === "format" && (
+          <div className="space-y-4 text-xs">
+            <div>
+              <p className="font-semibold mb-1.5 text-muted-foreground uppercase tracking-wide text-[10px]">Markdown (recommended)</p>
+              <pre className="rounded-lg bg-muted px-3 py-3 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{SAMPLE_MARKDOWN}</pre>
+            </div>
+            <div>
+              <p className="font-semibold mb-1.5 text-muted-foreground uppercase tracking-wide text-[10px]">JSON</p>
+              <pre className="rounded-lg bg-muted px-3 py-3 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap">{SAMPLE_JSON}</pre>
+            </div>
+            <div>
+              <p className="font-semibold mb-1.5 text-muted-foreground uppercase tracking-wide text-[10px]">Simple bullet list</p>
+              <pre className="rounded-lg bg-muted px-3 py-3 font-mono text-[11px] leading-relaxed">{`# Project name\n- Task one\n- Task two\n1. Task three`}</pre>
+            </div>
+            <p className="text-muted-foreground">Priority values: <code className="bg-muted px-1 rounded">Critical · High · Medium · Low</code></p>
           </div>
         )}
 
-        {error && <p className="text-xs text-rose-400">{error}</p>}
-        <Button type="submit" size="sm" className="w-full" disabled={saving || !preview}>
-          {saving ? "Importing..." : `Create project${preview ? ` (${preview.tasks.length} tickets)` : ""}`}
-        </Button>
-      </form>
+        {/* ── Get AI prompt tab ── */}
+        {tab === "prompt" && (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Copy this prompt, paste it into ChatGPT or Claude, and add your goal at the end. Then paste the result back into the <strong>Paste</strong> tab.</p>
+            <pre className="rounded-lg bg-muted px-3 py-3 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap text-foreground">{IMPORT_PROMPT}<span className="text-primary font-semibold">[your goal here]</span></pre>
+            <Button size="sm" className="w-full gap-2" onClick={copyPrompt}>
+              {copied ? "✓ Copied!" : "Copy prompt"}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

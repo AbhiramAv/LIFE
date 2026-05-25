@@ -24,7 +24,7 @@ export function Logo({ size = 28, showWordmark = true, subtitle = "lifetime dash
       </div>
       {showWordmark && (
         <div className="min-w-0">
-          <p className="text-sm font-bold tracking-tight leading-none">LIFE</p>
+          <p className="text-sm font-bold tracking-tight leading-none">Mosaic</p>
           {subtitle && (
             <p className="text-[10px] text-muted-foreground leading-none mt-0.5">{subtitle}</p>
           )}

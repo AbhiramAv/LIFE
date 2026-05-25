@@ -10,8 +10,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "LIFE", template: "%s · LIFE" },
-  description: "Your personal lifetime dashboard",
+  title: { default: "Mosaic", template: "%s · Mosaic" },
+  description: "Many small pieces forming a whole life picture.",
 };
 
 export const viewport: Viewport = {

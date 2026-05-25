@@ -745,13 +745,20 @@ function DashboardTicketDialog({
 
 // ─── Issue card ───────────────────────────────────────────────────────────────
 
-function IssueCard({ issue, onPointerDown }: {
-  issue: AnyIssue; onPointerDown: (e: React.PointerEvent) => void;
+function IssueCard({ issue, onPointerDown, isDragging }: {
+  issue: AnyIssue; onPointerDown: (e: React.PointerEvent) => void; isDragging: boolean;
 }) {
   const isDone = DONE_STATUSES.includes(issue.status);
   const tag = isDone ? STATUS_TAG[issue.status] : null;
   const C = issue.projectColor;
   const [hov, setHov] = useState(false);
+
+  if (isDragging) {
+    return (
+      <div className="rounded-xl border border-dashed p-3"
+        style={{ borderColor: `${C}35`, backgroundColor: `${C}06`, minHeight: 58 }} />
+    );
+  }
 
   return (
     <div
@@ -783,12 +790,13 @@ function IssueCard({ issue, onPointerDown }: {
 
 const COL_STATUS: Record<string,string> = {todo:"todo",in_progress:"in_progress",done:"done"};
 
-function KanbanColumn({ title, color, columnKey, issues, onIssueClick, dragOver, containerRef, onCardPointerDown }: {
+function KanbanColumn({ title, color, columnKey, issues, onIssueClick, dragOver, containerRef, onCardPointerDown, draggingId }: {
   title:string; color:string; columnKey:string; issues:AnyIssue[];
   onIssueClick:(issue:AnyIssue)=>void;
   dragOver:boolean;
   containerRef:React.RefObject<HTMLDivElement|null>;
   onCardPointerDown:(issue:AnyIssue, e:React.PointerEvent)=>void;
+  draggingId:number|null;
 }) {
   return (
     <div
@@ -810,6 +818,7 @@ function KanbanColumn({ title, color, columnKey, issues, onIssueClick, dragOver,
         {issues.map(issue => (
           <IssueCard key={issue.id} issue={issue}
             onPointerDown={e=>onCardPointerDown(issue, e)}
+            isDragging={draggingId === issue.id}
           />
         ))}
         {issues.length===0 && (
@@ -826,12 +835,14 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
   sprintIssues:AnyIssue[]; onRequestDone:(p:PendingDone)=>void;
   onStatusChange:(id:number,s:string)=>void; onIssueClick:(issue:AnyIssue)=>void; onPlanSprint:()=>void;
 }) {
-  const [dragging, setDragging] = useState<DragInfo|null>(null);
-  const [overCol, setOverCol]   = useState<string|null>(null);
-  const todoRef   = useRef<HTMLDivElement>(null);
-  const inProgRef = useRef<HTMLDivElement>(null);
-  const doneRef   = useRef<HTMLDivElement>(null);
-  const dragStart = useRef<{x:number;y:number;id:number;issue:AnyIssue}|null>(null);
+  const [dragging, setDragging]     = useState<DragInfo|null>(null);
+  const [overCol, setOverCol]       = useState<string|null>(null);
+  const [pointerPos, setPointerPos] = useState<{x:number;y:number}|null>(null);
+  const todoRef    = useRef<HTMLDivElement>(null);
+  const inProgRef  = useRef<HTMLDivElement>(null);
+  const doneRef    = useRef<HTMLDivElement>(null);
+  const dragStart  = useRef<{x:number;y:number;id:number;issue:AnyIssue}|null>(null);
+  const dragOffset = useRef<{x:number;y:number}>({x:0,y:0});
 
   const colEntries: [string, React.RefObject<HTMLDivElement|null>][] = [
     ["todo", todoRef], ["in_progress", inProgRef], ["done", doneRef],
@@ -846,13 +857,19 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
   }
 
   function handleCardPointerDown(issue:AnyIssue, e:React.PointerEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     dragStart.current = { x:e.clientX, y:e.clientY, id:issue.id, issue };
+    setPointerPos({ x: e.clientX, y: e.clientY });
     setDragging({ id:issue.id });
   }
 
   useEffect(() => {
     if (!dragging) return;
-    function onMove(e:PointerEvent) { setOverCol(getColAt(e.clientX, e.clientY)); }
+    function onMove(e:PointerEvent) {
+      setPointerPos({ x: e.clientX, y: e.clientY });
+      setOverCol(getColAt(e.clientX, e.clientY));
+    }
     function onUp(e:PointerEvent) {
       const s = dragStart.current;
       if (s) {
@@ -870,6 +887,7 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
       dragStart.current = null;
       setDragging(null);
       setOverCol(null);
+      setPointerPos(null);
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -894,13 +912,49 @@ function BoardContent({ sprintIssues, onRequestDone, onStatusChange, onIssueClic
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <KanbanColumn title="Todo"        color="#6366f1" columnKey="todo"        issues={todoIssues}
-            onIssueClick={onIssueClick} dragOver={overCol==="todo"}        containerRef={todoRef}   onCardPointerDown={handleCardPointerDown} />
+            onIssueClick={onIssueClick} dragOver={overCol==="todo"}        containerRef={todoRef}   onCardPointerDown={handleCardPointerDown} draggingId={dragging?.id??null} />
           <KanbanColumn title="In Progress" color="#f59e0b" columnKey="in_progress" issues={inProgIssues}
-            onIssueClick={onIssueClick} dragOver={overCol==="in_progress"} containerRef={inProgRef} onCardPointerDown={handleCardPointerDown} />
+            onIssueClick={onIssueClick} dragOver={overCol==="in_progress"} containerRef={inProgRef} onCardPointerDown={handleCardPointerDown} draggingId={dragging?.id??null} />
           <KanbanColumn title="Done"        color="#10b981" columnKey="done"        issues={doneIssues}
-            onIssueClick={onIssueClick} dragOver={overCol==="done"}        containerRef={doneRef}   onCardPointerDown={handleCardPointerDown} />
+            onIssueClick={onIssueClick} dragOver={overCol==="done"}        containerRef={doneRef}   onCardPointerDown={handleCardPointerDown} draggingId={dragging?.id??null} />
         </div>
       )}
+
+      {/* Ghost card follows pointer during drag */}
+      {dragging && pointerPos && dragStart.current && (() => {
+        const issue = dragStart.current.issue;
+        const C = issue.projectColor;
+        const done = DONE_STATUSES.includes(issue.status);
+        const tag  = done ? STATUS_TAG[issue.status] : null;
+        return (
+          <div style={{
+            position:"fixed",
+            left: pointerPos.x - dragOffset.current.x,
+            top:  pointerPos.y - dragOffset.current.y,
+            width: 240,
+            zIndex: 9999,
+            pointerEvents: "none",
+            transform: "rotate(2deg) scale(1.04)",
+            transformOrigin: "top left",
+            filter: `drop-shadow(0 16px 32px ${C}50)`,
+          }}>
+            <div style={{
+              borderTopColor:`${C}60`, borderRightColor:`${C}60`,
+              borderBottomColor:`${C}60`, borderLeftColor:C, borderLeftWidth:3,
+              boxShadow:`0 0 0 1px ${C}30`,
+              background:`linear-gradient(135deg,${C}12,transparent)`,
+            }} className="rounded-xl border bg-card p-3 space-y-2.5 select-none">
+              <p className={`text-xs font-medium leading-snug ${done?"line-through text-muted-foreground":""}`}>{issue.title}</p>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full truncate max-w-[110px]"
+                  style={{backgroundColor:`${C}20`,color:C}}>{issue.projectTitle}</span>
+                {tag && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+                  style={{backgroundColor:`${tag.color}20`,color:tag.color}}>{tag.label}</span>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
