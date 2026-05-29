@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Eye, EyeOff } from "lucide-react";
 
 function GoogleIcon() {
   return (
@@ -23,6 +24,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
+  const [showPw, setShowPw]     = useState(false);
   const router  = useRouter();
   const supabase = createClient();
 
@@ -55,10 +57,19 @@ export default function LoginPage() {
           type="email" placeholder="Email" value={email}
           onChange={e => setEmail(e.target.value)} required autoFocus
         />
-        <Input
-          type="password" placeholder="Password" value={password}
-          onChange={e => setPassword(e.target.value)} required
-        />
+        <div className="relative">
+          <Input
+            type={showPw ? "text" : "password"} placeholder="Password" value={password}
+            onChange={e => setPassword(e.target.value)} required className="pr-9"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPw(v => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
         {error && <p className="text-xs text-rose-400">{error}</p>}
         <Button type="submit" className="w-full" disabled={loading}>
           {loading ? "Signing in…" : "Sign in"}
