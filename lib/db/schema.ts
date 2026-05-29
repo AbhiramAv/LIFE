@@ -193,6 +193,31 @@ export const announcements = pgTable("announcements", {
   createdBy:  text("created_by").notNull(),
 });
 
+// ─── Fitness Planning ─────────────────────────────────────────────────────────
+
+export const workoutPlans = pgTable("workout_plans", {
+  id:        serial("id").primaryKey(),
+  userId:    text("user_id").notNull(),
+  weekStart: text("week_start").notNull(), // Monday YYYY-MM-DD
+  createdAt: text("created_at").notNull().default(sql`now()`),
+});
+
+export const plannedWorkouts = pgTable("planned_workouts", {
+  id:        serial("id").primaryKey(),
+  planId:    integer("plan_id").notNull().references(() => workoutPlans.id, { onDelete: "cascade" }),
+  dayOfWeek: integer("day_of_week").notNull(), // 1=Mon…7=Sun
+  name:      text("name"),
+});
+
+export const plannedExercises = pgTable("planned_exercises", {
+  id:               serial("id").primaryKey(),
+  plannedWorkoutId: integer("planned_workout_id").notNull().references(() => plannedWorkouts.id, { onDelete: "cascade" }),
+  exerciseId:       integer("exercise_id").notNull().references(() => exercises.id),
+  targetSets:       integer("target_sets").notNull().default(3),
+  targetReps:       integer("target_reps").notNull().default(12),
+  sortOrder:        integer("sort_order").notNull().default(0),
+});
+
 // ─── Calendar Events ──────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable("calendar_events", {
