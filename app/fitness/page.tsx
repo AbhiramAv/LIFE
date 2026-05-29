@@ -11,13 +11,13 @@ import { Input } from "@/components/ui/input";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type ExRow = { id: number; name: string; category: string; muscleGroups: string };
+type ExRow = { id: number; name: string; category: string; muscleGroups: string; equipmentType: string };
 
 type SplitGroupMeta  = { id: number; name: string; sortOrder: number; defaultCount: number; defaultExerciseIds: number[] };
 type SplitMeta       = { id: number; name: string; slug: string; description: string; groups: SplitGroupMeta[] };
 
 type WGExercise = {
-  id: number; exerciseId: number; exerciseName: string; category: string;
+  id: number; exerciseId: number; exerciseName: string; category: string; equipmentType: string;
   targetSets: number; targetReps: number; targetWeight: number | null; lastWeight: number | null;
 };
 type WeekGroup   = { id: number; name: string; splitGroupId: number; sortOrder: number; exercises: WGExercise[] };
@@ -39,6 +39,13 @@ type SetDraft = {
 
 type ProgressPt = { date: string; maxWeight: number; max1RM: number; volume: number };
 type MuscleFreq = { category: string; muscles: string[]; sessions: number; sets: number };
+
+type PendingExercise = {
+  exerciseId: number; exerciseName: string; category: string; equipmentType: string;
+  targetSets: number; targetReps: number; targetWeight: number | null; lastWeight: number | null; sortOrder: number;
+};
+type PendingGroup = { splitGroupId: number; name: string; sortOrder: number; exercises: PendingExercise[] };
+type PendingSplitConfig = { splitId: number; splitName: string; splitSlug: string; frequency: number; groups: PendingGroup[] };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -185,6 +192,147 @@ function ExerciseCategoryIcon({ category }: { category: string }) {
   );
 }
 
+// ── Equipment type icon ────────────────────────────────────────────────────────
+
+const EQUIPMENT_ICONS: Record<string, React.ReactNode> = {
+  barbell: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <rect x="0.5" y="7.5" width="3" height="5" rx="1" fill="currentColor"/>
+      <rect x="3.5" y="8.5" width="2" height="3" rx="0.5" fill="currentColor"/>
+      <line x1="5.5" y1="10" x2="14.5" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <rect x="14.5" y="8.5" width="2" height="3" rx="0.5" fill="currentColor"/>
+      <rect x="16.5" y="7.5" width="3" height="5" rx="1" fill="currentColor"/>
+    </svg>
+  ),
+  dumbbell: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <rect x="1" y="8" width="3.5" height="4" rx="1" fill="currentColor"/>
+      <rect x="4.5" y="9" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <line x1="6.5" y1="10" x2="13.5" y2="10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      <rect x="13.5" y="9" width="2" height="2" rx="0.5" fill="currentColor"/>
+      <rect x="15.5" y="8" width="3.5" height="4" rx="1" fill="currentColor"/>
+    </svg>
+  ),
+  cable: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <circle cx="10" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="10" cy="4" r="1" fill="currentColor"/>
+      <path d="M10 6.5 L7 15 L13 15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+      <line x1="7" y1="15" x2="13" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  ),
+  machine: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <rect x="2" y="3" width="16" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.3"/>
+      <rect x="5" y="6" width="5" height="7" rx="1" fill="currentColor" opacity="0.35"/>
+      <line x1="13" y1="7" x2="16" y2="7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="13" y1="10" x2="16" y2="10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="13" y1="13" x2="16" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="3" y1="18" x2="17" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  bodyweight: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <circle cx="10" cy="3.5" r="2" fill="currentColor"/>
+      <line x1="10" y1="5.5" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="10" y1="8.5" x2="7" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="10" y1="8.5" x2="13" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="10" y1="12" x2="7.5" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="10" y1="12" x2="12.5" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  kettlebell: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <circle cx="10" cy="13" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7.5 9.5 Q10 4.5 12.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+      <rect x="8.5" y="8" width="3" height="2" rx="1" fill="currentColor"/>
+    </svg>
+  ),
+  other: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5"/>
+      <line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <line x1="7" y1="10" x2="13" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+};
+
+const EQUIPMENT_COLOR: Record<string, string> = {
+  barbell: "#ef4444", dumbbell: "#f97316", cable: "#0ea5e9",
+  machine: "#6366f1", bodyweight: "#10b981", kettlebell: "#f59e0b", other: "#6b7280",
+};
+const EQUIPMENT_LABEL: Record<string, string> = {
+  barbell: "Barbell", dumbbell: "Dumbbell", cable: "Cable",
+  machine: "Machine", bodyweight: "Bodyweight", kettlebell: "Kettlebell", other: "Other",
+};
+
+function EquipmentIcon({ type, size = 36 }: { type: string; size?: number }) {
+  const color = EQUIPMENT_COLOR[type] ?? "#6b7280";
+  return (
+    <div style={{ width: size, height: size, backgroundColor: `${color}18`, color, borderRadius: 8 }}
+      className="flex items-center justify-center shrink-0 p-1.5">
+      {EQUIPMENT_ICONS[type] ?? EQUIPMENT_ICONS.other}
+    </div>
+  );
+}
+
+// ── Split visual icon ──────────────────────────────────────────────────────────
+
+const SPLIT_VISUAL: Record<string, React.ReactNode> = {
+  ppl: (
+    <svg viewBox="0 0 44 44" fill="none" className="h-full w-full">
+      <rect x="2" y="2"  width="40" height="12" rx="3" fill="#10b981"/>
+      <rect x="2" y="16" width="40" height="12" rx="3" fill="#0ea5e9"/>
+      <rect x="2" y="30" width="40" height="12" rx="3" fill="#8b5cf6"/>
+      <text x="22" y="11"  textAnchor="middle" fontSize="6" fill="white" fontWeight="700">PUSH</text>
+      <text x="22" y="25"  textAnchor="middle" fontSize="6" fill="white" fontWeight="700">PULL</text>
+      <text x="22" y="39"  textAnchor="middle" fontSize="6" fill="white" fontWeight="700">LEGS</text>
+    </svg>
+  ),
+  upper_lower: (
+    <svg viewBox="0 0 44 44" fill="none" className="h-full w-full">
+      <rect x="2" y="2"  width="40" height="19" rx="3" fill="#f59e0b"/>
+      <rect x="2" y="23" width="40" height="19" rx="3" fill="#f43f5e"/>
+      <text x="22" y="14" textAnchor="middle" fontSize="6" fill="white" fontWeight="700">UPPER</text>
+      <text x="22" y="35" textAnchor="middle" fontSize="6" fill="white" fontWeight="700">LOWER</text>
+    </svg>
+  ),
+  full_body: (
+    <svg viewBox="0 0 44 44" fill="none" className="h-full w-full">
+      <rect x="2" y="2" width="40" height="40" rx="4" fill="#6366f1"/>
+      <text x="22" y="20" textAnchor="middle" fontSize="7" fill="white" fontWeight="700">FULL</text>
+      <text x="22" y="30" textAnchor="middle" fontSize="6" fill="white" opacity="0.85">BODY</text>
+    </svg>
+  ),
+  bro_split: (
+    <svg viewBox="0 0 44 44" fill="none" className="h-full w-full">
+      {(["#10b981","#0ea5e9","#8b5cf6","#f59e0b","#f43f5e"] as const).map((c, i) => (
+        <rect key={i} x={2 + i*8.5} y="2" width="7.5" height="40" rx="2" fill={c}/>
+      ))}
+    </svg>
+  ),
+  push_pull: (
+    <svg viewBox="0 0 44 44" fill="none" className="h-full w-full">
+      <rect x="2" y="2"  width="40" height="19" rx="3" fill="#10b981"/>
+      <rect x="2" y="23" width="40" height="19" rx="3" fill="#0ea5e9"/>
+      <text x="22" y="14" textAnchor="middle" fontSize="6" fill="white" fontWeight="700">PUSH</text>
+      <text x="22" y="35" textAnchor="middle" fontSize="6" fill="white" fontWeight="700">PULL</text>
+    </svg>
+  ),
+};
+
+function SplitVisualIcon({ slug, name }: { slug: string; name: string }) {
+  const isCustom = !SPLIT_VISUAL[slug];
+  if (isCustom) {
+    return (
+      <div className="h-full w-full rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+        <span className="text-white font-bold text-xs text-center leading-tight px-1">{name.slice(0,2).toUpperCase()}</span>
+      </div>
+    );
+  }
+  return <>{SPLIT_VISUAL[slug]}</>;
+}
+
 // ── Stepper (compact) ──────────────────────────────────────────────────────────
 
 function Stepper({ value, onChange, step = 1, min = 0, unit }: {
@@ -211,16 +359,36 @@ function Stepper({ value, onChange, step = 1, min = 0, unit }: {
 
 // ── Exercise picker (inline) ───────────────────────────────────────────────────
 
+type EquipmentFilter = "all" | "machine" | "freeweight" | "bodyweight";
+
 function ExercisePicker({ all, excluded, onAdd, onClose }: {
   all: ExRow[]; excluded: number[]; onAdd: (e: ExRow) => void; onClose: () => void;
 }) {
-  const [cat, setCat] = useState("");
-  const [q, setQ]     = useState("");
+  const [cat, setCat]           = useState("");
+  const [q, setQ]               = useState("");
+  const [eqFilter, setEqFilter] = useState<EquipmentFilter>("all");
+
+  function matchesEquipment(ex: ExRow): boolean {
+    if (eqFilter === "all") return true;
+    if (eqFilter === "machine") return ex.equipmentType === "machine" || ex.equipmentType === "cable";
+    if (eqFilter === "freeweight") return ex.equipmentType === "barbell" || ex.equipmentType === "dumbbell" || ex.equipmentType === "kettlebell";
+    if (eqFilter === "bodyweight") return ex.equipmentType === "bodyweight";
+    return true;
+  }
+
   const visible = all
     .filter(e => !excluded.includes(e.id))
     .filter(e => !cat || e.category === cat)
+    .filter(e => matchesEquipment(e))
     .filter(e => !q   || e.name.toLowerCase().includes(q.toLowerCase()))
     .slice(0, 20);
+
+  const EQ_TABS: { key: EquipmentFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "machine", label: "Machine" },
+    { key: "freeweight", label: "Free Weight" },
+    { key: "bodyweight", label: "Bodyweight" },
+  ];
 
   return (
     <div className="rounded-xl border border-dashed border-border bg-muted/20 overflow-hidden">
@@ -241,6 +409,14 @@ function ExercisePicker({ all, excluded, onAdd, onClose }: {
             </button>
           ))}
         </div>
+        <div className="flex gap-1 overflow-x-auto">
+          {EQ_TABS.map(t => (
+            <button key={t.key} onClick={() => setEqFilter(t.key)}
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors ${eqFilter === t.key ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="max-h-40 overflow-y-auto divide-y divide-border/50">
         {visible.length === 0
@@ -248,7 +424,10 @@ function ExercisePicker({ all, excluded, onAdd, onClose }: {
           : visible.map(ex => (
             <button key={ex.id} onClick={() => { onAdd(ex); setQ(""); }}
               className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
-              <span className="text-sm">{ex.name}</span>
+              <div className="flex items-center gap-2">
+                <EquipmentIcon type={ex.equipmentType} size={20} />
+                <span className="text-sm">{ex.name}</span>
+              </div>
               <CategoryBadge cat={ex.category} />
             </button>
           ))
@@ -260,11 +439,11 @@ function ExercisePicker({ all, excluded, onAdd, onClose }: {
 
 // ── Step 1: Split picker ───────────────────────────────────────────────────────
 
-const SPLIT_ICONS: Record<string, string> = {
-  ppl: "P·P·L", upper_lower: "U·L", full_body: "FB", bro_split: "Bro", push_pull: "P·P",
-};
-
-function SplitPicker({ splits, onSelect }: { splits: SplitMeta[]; onSelect: (s: SplitMeta) => void }) {
+function SplitPicker({ splits, onSelect, onCreateSplit }: {
+  splits: SplitMeta[];
+  onSelect: (s: SplitMeta) => void;
+  onCreateSplit: () => void;
+}) {
   return (
     <div className="space-y-4">
       <div>
@@ -276,8 +455,8 @@ function SplitPicker({ splits, onSelect }: { splits: SplitMeta[]; onSelect: (s: 
           <button key={s.id} onClick={() => onSelect(s)}
             className="rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all group">
             <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
-                {SPLIT_ICONS[s.slug] ?? "?"}
+              <div className="h-12 w-12 shrink-0">
+                <SplitVisualIcon slug={s.slug} name={s.name} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm group-hover:text-primary transition-colors">{s.name}</p>
@@ -293,7 +472,158 @@ function SplitPicker({ splits, onSelect }: { splits: SplitMeta[]; onSelect: (s: 
             </div>
           </button>
         ))}
+
+        {/* Create custom split card */}
+        <button onClick={onCreateSplit}
+          className="rounded-xl border border-dashed border-border bg-card p-4 text-left hover:border-violet-400/50 hover:bg-violet-500/5 transition-all group">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 shrink-0 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-600/20 flex items-center justify-center">
+              <Plus className="h-5 w-5 text-violet-500" />
+            </div>
+            <div>
+              <p className="font-semibold text-sm group-hover:text-violet-500 transition-colors">Create your own split</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Build a custom program with your own muscle groups</p>
+            </div>
+          </div>
+        </button>
       </div>
+    </div>
+  );
+}
+
+// ── Custom split creator ───────────────────────────────────────────────────────
+
+type CustomGroup = { name: string; exercises: ExRow[] };
+
+function CustomSplitCreator({ allExercises, onCreated, onBack }: {
+  allExercises: ExRow[];
+  onCreated: (split: SplitMeta) => void;
+  onBack: () => void;
+}) {
+  const [splitName, setSplitName]   = useState("");
+  const [groups, setGroups]         = useState<CustomGroup[]>([{ name: "", exercises: [] }]);
+  const [pickerGroupIdx, setPickerGroupIdx] = useState<number | null>(null);
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState("");
+
+  function addGroup() {
+    setGroups(prev => [...prev, { name: "", exercises: [] }]);
+  }
+
+  function updateGroupName(idx: number, name: string) {
+    setGroups(prev => prev.map((g, i) => i === idx ? { ...g, name } : g));
+  }
+
+  function removeGroupExercise(groupIdx: number, exId: number) {
+    setGroups(prev => prev.map((g, i) => i === groupIdx
+      ? { ...g, exercises: g.exercises.filter(e => e.id !== exId) }
+      : g
+    ));
+  }
+
+  function addExerciseToGroup(groupIdx: number, ex: ExRow) {
+    setGroups(prev => prev.map((g, i) => i === groupIdx
+      ? { ...g, exercises: [...g.exercises, ex] }
+      : g
+    ));
+    setPickerGroupIdx(null);
+  }
+
+  async function handleSave() {
+    if (!splitName.trim()) { setError("Split name is required."); return; }
+    if (groups.some(g => !g.name.trim())) { setError("All groups need a name."); return; }
+    setSaving(true); setError("");
+    const res = await fetch("/api/fitness/splits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: splitName.trim(),
+        groups: groups.map(g => ({
+          name: g.name.trim(),
+          exerciseIds: g.exercises.map(e => e.id),
+        })),
+      }),
+    });
+    if (!res.ok) { setError("Failed to create split."); setSaving(false); return; }
+    const newSplit: SplitMeta = await res.json();
+    onCreated(newSplit);
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft className="h-3.5 w-3.5" /> Back
+      </button>
+      <div>
+        <h2 className="text-lg font-bold">Create your own split</h2>
+        <p className="text-sm text-muted-foreground">Name it and add muscle groups with exercises</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Split name</p>
+        <Input value={splitName} onChange={e => setSplitName(e.target.value)} placeholder="e.g. My PPL, Push A, etc." />
+      </div>
+
+      <div className="space-y-3">
+        {groups.map((g, gi) => (
+          <div key={gi} className="rounded-xl border border-border bg-card p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Input value={g.name} onChange={e => updateGroupName(gi, e.target.value)}
+                placeholder={`Group ${gi + 1} name (e.g. Push, Pull, Legs…)`} className="h-8 text-sm" />
+              {groups.length > 1 && (
+                <button onClick={() => setGroups(prev => prev.filter((_, i) => i !== gi))}
+                  className="text-muted-foreground hover:text-rose-400 transition-colors shrink-0">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {g.exercises.length > 0 && (
+              <div className="space-y-1">
+                {g.exercises.map(ex => (
+                  <div key={ex.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-muted/40">
+                    <EquipmentIcon type={ex.equipmentType} size={20} />
+                    <span className="text-xs flex-1">{ex.name}</span>
+                    <CategoryBadge cat={ex.category} />
+                    <button onClick={() => removeGroupExercise(gi, ex.id)}
+                      className="text-muted-foreground hover:text-rose-400 transition-colors">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {pickerGroupIdx === gi
+              ? <ExercisePicker
+                  all={allExercises}
+                  excluded={g.exercises.map(e => e.id)}
+                  onAdd={ex => addExerciseToGroup(gi, ex)}
+                  onClose={() => setPickerGroupIdx(null)}
+                />
+              : (
+                <button onClick={() => setPickerGroupIdx(gi)}
+                  className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-dashed border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+                  <Plus className="h-3 w-3" /> Add Exercise
+                </button>
+              )
+            }
+          </div>
+        ))}
+
+        <button onClick={addGroup}
+          className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+          <Plus className="h-4 w-4" /> Add Group
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-rose-400">{error}</p>}
+
+      <Button className="w-full" onClick={handleSave} disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+        Save Split
+      </Button>
     </div>
   );
 }
@@ -337,10 +667,11 @@ function FrequencyPicker({ split, onSelect, onBack }: {
 
 // ── Step 3: Exercise configurator ──────────────────────────────────────────────
 
-function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }: {
+function ExerciseConfigurator({ groups, allExercises, loading, pendingMode, onBack, onSave }: {
   groups: WeekGroup[];
   allExercises: ExRow[];
   loading: boolean;
+  pendingMode?: boolean;
   onBack: () => void;
   onSave: (updatedGroups: WeekGroup[]) => Promise<void>;
 }) {
@@ -359,6 +690,12 @@ function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }:
   }
 
   async function removeExercise(wgeId: number) {
+    if (pendingMode) {
+      setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
+        ...g, exercises: g.exercises.filter(ex => ex.id !== wgeId),
+      }));
+      return;
+    }
     await fetch(`/api/fitness/week-group-exercises/${wgeId}`, { method: "DELETE" });
     setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
       ...g, exercises: g.exercises.filter(ex => ex.id !== wgeId),
@@ -367,6 +704,23 @@ function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }:
 
   async function addExercise(ex: ExRow) {
     setShowPicker(false);
+    if (pendingMode) {
+      const newEx: WGExercise = {
+        id: Date.now(), // temp local id
+        exerciseId: ex.id,
+        exerciseName: ex.name,
+        category: ex.category,
+        equipmentType: ex.equipmentType,
+        targetSets: 3,
+        targetReps: 10,
+        targetWeight: null,
+        lastWeight: null,
+      };
+      setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
+        ...g, exercises: [...g.exercises, newEx],
+      }));
+      return;
+    }
     const res = await fetch(`/api/fitness/week-groups/${group.id}/exercises`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -389,12 +743,13 @@ function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }:
 
   async function handleSave() {
     setSaving(true);
-    // Persist any target changes for all groups
-    for (const g of localGroups) {
-      for (const ex of g.exercises) {
-        await patchExercise(ex.id, "targetSets",   ex.targetSets);
-        await patchExercise(ex.id, "targetReps",   ex.targetReps);
-        await patchExercise(ex.id, "targetWeight", ex.targetWeight ?? 0);
+    if (!pendingMode) {
+      for (const g of localGroups) {
+        for (const ex of g.exercises) {
+          await patchExercise(ex.id, "targetSets",   ex.targetSets);
+          await patchExercise(ex.id, "targetReps",   ex.targetReps);
+          await patchExercise(ex.id, "targetWeight", ex.targetWeight ?? 0);
+        }
       }
     }
     await onSave(localGroups);
@@ -442,6 +797,7 @@ function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }:
         {group?.exercises.map(ex => (
           <div key={ex.id} className="rounded-xl border border-border bg-card p-3 space-y-3">
             <div className="flex items-center gap-2">
+              <EquipmentIcon type={ex.equipmentType} size={32} />
               <span className="text-sm font-semibold flex-1">{ex.exerciseName}</span>
               <CategoryBadge cat={ex.category} />
               <button onClick={() => removeExercise(ex.id)}
@@ -494,7 +850,7 @@ function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }:
 
       <Button className="w-full" onClick={handleSave} disabled={saving}>
         {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-        Save Plan
+        {pendingMode ? "Save Plan" : "Save Plan"}
       </Button>
     </div>
   );
@@ -651,7 +1007,7 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
         return (
           <div key={ex.id} className={`rounded-xl border bg-card overflow-hidden transition-colors ${allDone ? "border-emerald-500/40" : "border-border"}`}>
             <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-              <ExerciseCategoryIcon category={ex.category} />
+              <EquipmentIcon type={ex.equipmentType} size={36} />
               <span className="font-semibold text-sm flex-1">{ex.exerciseName}</span>
               <CategoryBadge cat={ex.category} />
               {ex.lastWeight !== null && (
@@ -856,7 +1212,8 @@ type PlanView =
   | { type: "pick-freq"; split: SplitMeta }
   | { type: "configure"; weekSplitData: WeekSplit }
   | { type: "edit-group"; group: WeekGroup }
-  | { type: "workout"; date: string };
+  | { type: "workout"; date: string }
+  | { type: "create-split" };
 
 function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
   const [weekStart, setWeekStart]   = useState(() => getMondayOf(new Date()));
@@ -865,19 +1222,9 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
   const [splits, setSplits]         = useState<SplitMeta[]>([]);
   const [view, setView]             = useState<PlanView>({ type: "week" });
   const [addingSplit, setAddingSplit] = useState(false);
-  const [creatingPlan, setCreatingPlan] = useState(false);
   const [configuringGroups, setConfiguringGroups] = useState<WeekGroup[] | null>(null);
-
-  async function createPlan() {
-    setCreatingPlan(true);
-    const res = await fetch("/api/fitness/week-plan", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekStart }),
-    });
-    const created = await res.json();
-    setPlan(created);
-    setCreatingPlan(false);
-  }
+  const [pendingMode, setPendingMode] = useState(false);
+  const [pendingConfig, setPendingConfig] = useState<PendingSplitConfig | null>(null);
 
   const loadPlan = useCallback(async (ws: string) => {
     setLoadingPlan(true);
@@ -896,11 +1243,6 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
   // Returns all available groups the user hasn't logged for a given date
   function getAvailableGroups(date: string): WeekGroup[] {
     if (!plan) return [];
-    const doneTodayGroupIds = plan.dayWorkouts
-      .filter(dw => dw.date === date && dw.completedAt && dw.weekGroupId !== null)
-      .map(dw => dw.weekGroupId!);
-
-    // Count how many times each group has been done this week vs frequency
     const allGroups = plan.splits.flatMap(ws =>
       ws.groups.map(g => ({ ...g, frequency: ws.frequency }))
     );
@@ -915,7 +1257,104 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
     });
   }
 
+  // Convert PendingSplitConfig groups to WeekGroup shape for the configurator
+  function pendingGroupsToWeekGroups(pg: PendingGroup[]): WeekGroup[] {
+    return pg.map((g, gi) => ({
+      id: -(gi + 1), // negative ids signal pending
+      name: g.name,
+      splitGroupId: g.splitGroupId,
+      sortOrder: g.sortOrder,
+      exercises: g.exercises.map((ex, ei) => ({
+        id: -(gi * 1000 + ei + 1),
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.exerciseName,
+        category: ex.category,
+        equipmentType: ex.equipmentType,
+        targetSets: ex.targetSets,
+        targetReps: ex.targetReps,
+        targetWeight: ex.targetWeight,
+        lastWeight: ex.lastWeight,
+      })),
+    }));
+  }
+
+  // Convert WeekGroup[] back to batch API format for pending mode save
+  async function savePendingPlan(cfg: PendingSplitConfig, updatedGroups: WeekGroup[], weekStartDate: string) {
+    const res = await fetch("/api/fitness/week-plan/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        weekStart: weekStartDate,
+        splits: [{
+          splitId: cfg.splitId,
+          frequency: cfg.frequency,
+          groups: updatedGroups.map((g, gi) => ({
+            splitGroupId: cfg.groups[gi]?.splitGroupId ?? g.splitGroupId,
+            name: g.name,
+            sortOrder: g.sortOrder,
+            exercises: g.exercises.map(ex => ({
+              exerciseId: ex.exerciseId,
+              exerciseName: ex.exerciseName,
+              category: ex.category,
+              equipmentType: ex.equipmentType,
+              targetSets: ex.targetSets,
+              targetReps: ex.targetReps,
+              targetWeight: ex.targetWeight,
+              sortOrder: 0,
+            })),
+          })),
+        }],
+      }),
+    });
+    if (res.ok) {
+      const created: WeekPlan = await res.json();
+      setPlan(created);
+    }
+  }
+
   async function handleSplitSelected(split: SplitMeta, frequency: number) {
+    if (pendingMode) {
+      // Fetch defaults, no DB write
+      const res = await fetch(`/api/fitness/splits/${split.id}/defaults`);
+      if (!res.ok) return;
+      const defaults: { groups: Array<{ splitGroupId: number; name: string; sortOrder: number; exercises: Array<{ exerciseId: number; exerciseName: string; category: string; equipmentType: string; targetSets: number; targetReps: number; targetWeight: number | null; lastWeight: number | null; sortOrder: number }> }> } = await res.json();
+      const cfg: PendingSplitConfig = {
+        splitId: split.id,
+        splitName: split.name,
+        splitSlug: split.slug,
+        frequency,
+        groups: defaults.groups.map(g => ({
+          splitGroupId: g.splitGroupId,
+          name: g.name,
+          sortOrder: g.sortOrder,
+          exercises: g.exercises.map(ex => ({
+            exerciseId: ex.exerciseId,
+            exerciseName: ex.exerciseName,
+            category: ex.category,
+            equipmentType: ex.equipmentType,
+            targetSets: ex.targetSets,
+            targetReps: ex.targetReps,
+            targetWeight: ex.targetWeight,
+            lastWeight: ex.lastWeight,
+            sortOrder: ex.sortOrder,
+          })),
+        })),
+      };
+      setPendingConfig(cfg);
+      setConfiguringGroups(pendingGroupsToWeekGroups(cfg.groups));
+      // Need a fake WeekSplit for the configure view
+      const fakeSplit: WeekSplit = {
+        id: -1,
+        splitId: split.id,
+        splitName: split.name,
+        splitSlug: split.slug,
+        frequency,
+        groups: pendingGroupsToWeekGroups(cfg.groups),
+      };
+      setView({ type: "configure", weekSplitData: fakeSplit });
+      return;
+    }
+
     if (!plan) return;
     setAddingSplit(true);
     const res = await fetch(`/api/fitness/week-plan/${plan.id}/splits`, {
@@ -947,13 +1386,34 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
     return <div className="space-y-3">{Array.from({length:5},(_,i)=><div key={i} className="h-14 rounded-xl bg-muted animate-pulse"/>)}</div>;
   }
 
+  if (view.type === "create-split") {
+    return (
+      <CustomSplitCreator
+        allExercises={allExercises}
+        onCreated={newSplit => {
+          setSplits(prev => [...prev, newSplit]);
+          setView({ type: "pick-freq", split: newSplit });
+        }}
+        onBack={() => setView({ type: "pick-split" })}
+      />
+    );
+  }
+
   if (view.type === "pick-split") {
     return (
       <div className="space-y-4">
-        <button onClick={() => setView({ type:"week" })} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => {
+          setPendingMode(false);
+          setPendingConfig(null);
+          setView({ type:"week" });
+        }} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-3.5 w-3.5" /> Back
         </button>
-        <SplitPicker splits={splits} onSelect={s => setView({ type:"pick-freq", split: s })} />
+        <SplitPicker
+          splits={splits}
+          onSelect={s => setView({ type:"pick-freq", split: s })}
+          onCreateSplit={() => setView({ type: "create-split" })}
+        />
       </div>
     );
   }
@@ -983,8 +1443,24 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
         groups={groups}
         allExercises={allExercises}
         loading={false}
-        onBack={() => setView({ type:"week" })}
-        onSave={async () => { await loadPlan(weekStart); setView({ type:"week" }); }}
+        pendingMode={pendingMode}
+        onBack={() => {
+          if (pendingMode) {
+            setPendingMode(false);
+            setPendingConfig(null);
+          }
+          setView({ type:"week" });
+        }}
+        onSave={async (updatedGroups) => {
+          if (pendingMode && pendingConfig) {
+            await savePendingPlan(pendingConfig, updatedGroups, weekStart);
+            setPendingMode(false);
+            setPendingConfig(null);
+          } else {
+            await loadPlan(weekStart);
+          }
+          setView({ type:"week" });
+        }}
       />
     );
   }
@@ -1047,10 +1523,11 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
           <Dumbbell className="h-8 w-8 text-muted-foreground mx-auto" />
           <p className="text-sm font-medium">No plan for this week</p>
           <p className="text-xs text-muted-foreground">Set up your training split to get started</p>
-          <Button size="sm" onClick={createPlan} disabled={creatingPlan}>
-            {creatingPlan
-              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-              : <Plus className="h-4 w-4 mr-1.5" />}
+          <Button size="sm" onClick={() => {
+            setPendingMode(true);
+            setView({ type: "pick-split" });
+          }}>
+            <Plus className="h-4 w-4 mr-1.5" />
             Create Plan
           </Button>
         </div>
