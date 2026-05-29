@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
             sortOrder: weekGroupExercises.sortOrder,
             exerciseName: exercises.name,
             category: exercises.category,
+            equipmentType: exercises.equipmentType,
           })
             .from(weekGroupExercises)
             .innerJoin(exercises, eq(weekGroupExercises.exerciseId, exercises.id))
