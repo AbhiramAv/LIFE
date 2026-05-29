@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dumbbell, TrendingUp, Activity, X, Check, Loader2, Plus,
   ChevronLeft, ChevronRight, Trash2, Pencil, ArrowLeft, Search,
@@ -84,6 +84,104 @@ function CategoryBadge({ cat }: { cat: string }) {
       style={{ backgroundColor:`${CAT_COLOR[cat] ?? "#6b7280"}20`, color:CAT_COLOR[cat] ?? "#6b7280" }}>
       {cat}
     </span>
+  );
+}
+
+// ── Muscle group body silhouette ───────────────────────────────────────────────
+
+const MUSCLE_HIGHLIGHTS: Record<string, string[]> = {
+  push:        ["chest", "lShoulder", "rShoulder", "lUpper", "rUpper"],
+  pull:        ["lLat", "rLat", "lUpper", "rUpper", "lFore", "rFore"],
+  legs:        ["lThigh", "rThigh", "lCalf", "rCalf", "hip"],
+  upper:       ["chest", "lShoulder", "rShoulder", "lUpper", "rUpper", "lFore", "rFore"],
+  lower:       ["lThigh", "rThigh", "lCalf", "rCalf", "hip"],
+  "full body": ["chest", "lShoulder", "rShoulder", "core", "lThigh", "rThigh"],
+  core:        ["core"],
+};
+const MUSCLE_COLORS: Record<string, string> = {
+  push: "#10b981", pull: "#0ea5e9", legs: "#8b5cf6",
+  upper: "#f59e0b", lower: "#f43f5e", core: "#f59e0b", "full body": "#6366f1",
+};
+
+function MuscleGroupSVG({ name }: { name: string }) {
+  const key = name.toLowerCase();
+  const hl  = MUSCLE_HIGHLIGHTS[key] ?? [];
+  const col = MUSCLE_COLORS[key] ?? "#10b981";
+  const lit = (p: string) => hl.includes(p) ? col + "55" : "#9ca3af15";
+  const bdr = (p: string) => hl.includes(p) ? col + "80" : "transparent";
+
+  return (
+    <svg viewBox="0 0 60 120" className="h-full w-auto" fill="none">
+      <circle cx="30" cy="9"  r="8"  fill="#9ca3af15"/>
+      <rect   x="26" y="17"  width="8"  height="5" fill="#9ca3af15"/>
+      <ellipse cx="16" cy="26" rx="6" ry="4"       fill={lit("lShoulder")} stroke={bdr("lShoulder")} strokeWidth="0.8"/>
+      <ellipse cx="44" cy="26" rx="6" ry="4"       fill={lit("rShoulder")} stroke={bdr("rShoulder")} strokeWidth="0.8"/>
+      <rect x="17" y="22" width="26" height="17" rx="2" fill={lit("chest")}  stroke={bdr("chest")}  strokeWidth="0.8"/>
+      <rect x="11" y="26" width="6"  height="15" rx="2" fill={lit("lLat")}   stroke={bdr("lLat")}   strokeWidth="0.8"/>
+      <rect x="43" y="26" width="6"  height="15" rx="2" fill={lit("rLat")}   stroke={bdr("rLat")}   strokeWidth="0.8"/>
+      <rect x="18" y="39" width="24" height="14" rx="2" fill={lit("core")}   stroke={bdr("core")}   strokeWidth="0.8"/>
+      <rect x="8"  y="24" width="8"  height="18" rx="3" fill={lit("lUpper")} stroke={bdr("lUpper")} strokeWidth="0.8"/>
+      <rect x="44" y="24" width="8"  height="18" rx="3" fill={lit("rUpper")} stroke={bdr("rUpper")} strokeWidth="0.8"/>
+      <rect x="9"  y="43" width="7"  height="14" rx="3" fill={lit("lFore")}  stroke={bdr("lFore")}  strokeWidth="0.8"/>
+      <rect x="44" y="43" width="7"  height="14" rx="3" fill={lit("rFore")}  stroke={bdr("rFore")}  strokeWidth="0.8"/>
+      <rect x="17" y="53" width="26" height="9"  rx="2" fill={lit("hip")}    stroke={bdr("hip")}    strokeWidth="0.8"/>
+      <rect x="17" y="61" width="12" height="24" rx="3" fill={lit("lThigh")} stroke={bdr("lThigh")} strokeWidth="0.8"/>
+      <rect x="31" y="61" width="12" height="24" rx="3" fill={lit("rThigh")} stroke={bdr("rThigh")} strokeWidth="0.8"/>
+      <rect x="18" y="86" width="10" height="18" rx="3" fill={lit("lCalf")}  stroke={bdr("lCalf")}  strokeWidth="0.8"/>
+      <rect x="32" y="86" width="10" height="18" rx="3" fill={lit("rCalf")}  stroke={bdr("rCalf")}  strokeWidth="0.8"/>
+    </svg>
+  );
+}
+
+// ── Exercise category icon ─────────────────────────────────────────────────────
+
+const CAT_ICONS: Record<string, React.ReactNode> = {
+  push: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <line x1="4" y1="9" x2="16" y2="9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <circle cx="3" cy="9" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="17" cy="9" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M10 9 L10 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <path d="M7 12 L10 15 L13 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  pull: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <line x1="4" y1="11" x2="16" y2="11" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <circle cx="3" cy="11" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="17" cy="11" r="2" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M10 11 L10 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <path d="M7 8 L10 5 L13 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  legs: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <path d="M8 2 L8 10 L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <path d="M12 2 L12 10 L14 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <line x1="8" y1="10" x2="12" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  core: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5"/>
+      <circle cx="10" cy="10" r="3" fill="currentColor" opacity="0.4"/>
+    </svg>
+  ),
+  cardio: (
+    <svg viewBox="0 0 20 20" fill="none" className="h-full w-full">
+      <polyline points="1,10 4,4 7,14 10,7 13,12 16,8 19,10"
+        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+};
+
+function ExerciseCategoryIcon({ category }: { category: string }) {
+  const color = CAT_COLOR[category] ?? "#6b7280";
+  return (
+    <div className="h-9 w-9 rounded-lg shrink-0 flex items-center justify-center p-2"
+      style={{ backgroundColor: `${color}18`, color }}>
+      {CAT_ICONS[category] ?? <Dumbbell className="h-full w-full" />}
+    </div>
   );
 }
 
@@ -494,16 +592,24 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
         <div className="space-y-2">
           {availableGroups.map(g => (
             <button key={g.id} onClick={() => setSelectedGroup(g)}
-              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-sm">{g.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {g.exercises.length} exercise{g.exercises.length !== 1 ? "s" : ""}
-                    {g.exercises[0] && ` · ${g.exercises[0].exerciseName}${g.exercises.length > 1 ? `, …` : ""}`}
-                  </p>
+              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all group">
+              <div className="flex items-center gap-4">
+                <div className="h-20 w-10 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                  <MuscleGroupSVG name={g.name} />
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{g.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{g.exercises.length} exercise{g.exercises.length !== 1 ? "s" : ""}</p>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {g.exercises.slice(0, 3).map(ex => (
+                      <span key={ex.id} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{ex.exerciseName}</span>
+                    ))}
+                    {g.exercises.length > 3 && (
+                      <span className="text-[10px] text-muted-foreground/60">+{g.exercises.length - 3} more</span>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </div>
             </button>
           ))}
@@ -544,7 +650,8 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
         const allDone = exSets.every(s => s.draft.completed);
         return (
           <div key={ex.id} className={`rounded-xl border bg-card overflow-hidden transition-colors ${allDone ? "border-emerald-500/40" : "border-border"}`}>
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+              <ExerciseCategoryIcon category={ex.category} />
               <span className="font-semibold text-sm flex-1">{ex.exerciseName}</span>
               <CategoryBadge cat={ex.category} />
               {ex.lastWeight !== null && (
@@ -758,23 +865,25 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
   const [splits, setSplits]         = useState<SplitMeta[]>([]);
   const [view, setView]             = useState<PlanView>({ type: "week" });
   const [addingSplit, setAddingSplit] = useState(false);
+  const [creatingPlan, setCreatingPlan] = useState(false);
   const [configuringGroups, setConfiguringGroups] = useState<WeekGroup[] | null>(null);
+
+  async function createPlan() {
+    setCreatingPlan(true);
+    const res = await fetch("/api/fitness/week-plan", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekStart }),
+    });
+    const created = await res.json();
+    setPlan(created);
+    setCreatingPlan(false);
+  }
 
   const loadPlan = useCallback(async (ws: string) => {
     setLoadingPlan(true);
     const res = await fetch(`/api/fitness/week-plan?weekStart=${ws}`);
     const data = await res.json();
-    if (!data) {
-      // Auto-create plan
-      const res2 = await fetch("/api/fitness/week-plan", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStart: ws }),
-      });
-      const created = await res2.json();
-      setPlan(created);
-    } else {
-      setPlan(data);
-    }
+    setPlan(data ?? null);
     setLoadingPlan(false);
   }, []);
 
@@ -924,7 +1033,7 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
         </button>
       </div>
 
-      {plan && (
+      {plan ? (
         <WeekView
           plan={plan}
           weekStart={weekStart}
@@ -933,6 +1042,18 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
           onEditGroup={g => setView({ type:"edit-group", group: g })}
           onStartWorkout={date => setView({ type:"workout", date })}
         />
+      ) : (
+        <div className="rounded-xl border border-dashed border-border p-8 text-center space-y-3">
+          <Dumbbell className="h-8 w-8 text-muted-foreground mx-auto" />
+          <p className="text-sm font-medium">No plan for this week</p>
+          <p className="text-xs text-muted-foreground">Set up your training split to get started</p>
+          <Button size="sm" onClick={createPlan} disabled={creatingPlan}>
+            {creatingPlan
+              ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              : <Plus className="h-4 w-4 mr-1.5" />}
+            Create Plan
+          </Button>
+        </div>
       )}
     </div>
   );
