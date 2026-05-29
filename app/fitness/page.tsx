@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Dumbbell, TrendingUp, Activity, X, Check, Loader2,
-  ChevronDown, Timer, Search, RotateCcw, Plus, ChevronLeft, ChevronRight, Pencil,
+  Dumbbell, TrendingUp, Activity, X, Check, Loader2, Plus,
+  ChevronLeft, ChevronRight, Trash2, Pencil, ArrowLeft, Search,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -11,108 +11,117 @@ import { Input } from "@/components/ui/input";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type ExRow   = { id: number; name: string; category: string; muscleGroups: string };
-type SetEntry = { id: number; setNumber: number; reps: number; weightKg: number; rpe: number | null };
-type ExBlock  = { exerciseId: number; name: string; category: string; sets: SetEntry[]; targetReps: number };
-type Session  = { id: number; date: string; durationMins: number | null };
+type ExRow = { id: number; name: string; category: string; muscleGroups: string };
+
+type SplitGroupMeta  = { id: number; name: string; sortOrder: number; defaultCount: number; defaultExerciseIds: number[] };
+type SplitMeta       = { id: number; name: string; slug: string; description: string; groups: SplitGroupMeta[] };
+
+type WGExercise = {
+  id: number; exerciseId: number; exerciseName: string; category: string;
+  targetSets: number; targetReps: number; targetWeight: number | null; lastWeight: number | null;
+};
+type WeekGroup   = { id: number; name: string; splitGroupId: number; sortOrder: number; exercises: WGExercise[] };
+type WeekSplit   = { id: number; splitId: number; splitName: string; splitSlug: string; frequency: number; groups: WeekGroup[] };
+type DayWorkout  = { id: number; date: string; weekGroupId: number | null; groupName: string | null; completedAt: string | null };
+type WeekPlan    = { id: number; weekStart: string; splits: WeekSplit[]; dayWorkouts: DayWorkout[] };
+
+type SetDraft = {
+  weekGroupExerciseId: number;
+  exerciseId: number;
+  exerciseName: string;
+  setNumber: number;
+  targetWeight: number | null;
+  targetReps: number;
+  actualWeight: string;
+  actualReps: string;
+  completed: boolean;
+};
+
 type ProgressPt = { date: string; maxWeight: number; max1RM: number; volume: number };
 type MuscleFreq = { category: string; muscles: string[]; sessions: number; sets: number };
 
-type PlannedEx = {
-  id: number; exerciseId: number; targetSets: number; targetReps: number; sortOrder: number;
-  name: string; category: string;
-};
-type PlannedWorkout = { id: number; dayOfWeek: number; name: string | null; exercises: PlannedEx[] };
-type Plan = { id: number; weekStart: string; workouts: PlannedWorkout[] };
+// ── Constants ──────────────────────────────────────────────────────────────────
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
-const CATS = ["push", "pull", "legs", "core", "cardio", "other"] as const;
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] as const;
+const CATS = ["push","pull","legs","core","cardio","other"] as const;
 const CAT_COLOR: Record<string, string> = {
-  push: "#10b981", pull: "#0ea5e9", legs: "#8b5cf6",
-  core: "#f59e0b", cardio: "#f43f5e", other: "#6b7280",
+  push:"#10b981", pull:"#0ea5e9", legs:"#8b5cf6",
+  core:"#f59e0b", cardio:"#f43f5e", other:"#6b7280",
+};
+const SPLIT_FREQ: Record<string, { label: string; value: number }[]> = {
+  ppl:         [{ label:"Once (3 days)",  value:1 },{ label:"Twice (6 days)", value:2 }],
+  upper_lower: [{ label:"Once (2 days)",  value:1 },{ label:"Twice (4 days)", value:2 }],
+  full_body:   [{ label:"2× per week",    value:2 },{ label:"3× per week",    value:3 }],
+  bro_split:   [{ label:"Once (5 days)",  value:1 }],
+  push_pull:   [{ label:"Once (2 days)",  value:1 },{ label:"Twice (4 days)", value:2 }],
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function getMondayOf(date: Date): string {
+function getMondayOf(date: Date) {
   const d = new Date(date);
   const day = d.getDay();
   d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
   return d.toISOString().slice(0, 10);
 }
-
-function addDays(iso: string, n: number): string {
+function addDays(iso: string, n: number) {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
-
-function fmtDuration(s: number) {
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
-
 function fmtDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
 }
-
 function fmtWeekRange(monday: string) {
-  const start = new Date(monday + "T00:00:00");
-  const end   = new Date(monday + "T00:00:00");
-  end.setDate(end.getDate() + 6);
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`;
+  const s = new Date(monday + "T00:00:00");
+  const e = new Date(monday + "T00:00:00"); e.setDate(e.getDate() + 6);
+  return `${s.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${e.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
 }
 
 function CategoryBadge({ cat }: { cat: string }) {
   return (
     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize shrink-0"
-      style={{ backgroundColor: `${CAT_COLOR[cat]}20`, color: CAT_COLOR[cat] }}>
+      style={{ backgroundColor:`${CAT_COLOR[cat] ?? "#6b7280"}20`, color:CAT_COLOR[cat] ?? "#6b7280" }}>
       {cat}
     </span>
   );
 }
 
-// ── Stepper ────────────────────────────────────────────────────────────────────
+// ── Stepper (compact) ──────────────────────────────────────────────────────────
 
-function Stepper({ value, onChange, step = 1, min = 0, placeholder, unit }: {
-  value: string; onChange: (v: string) => void;
-  step?: number; min?: number; placeholder?: string; unit?: string;
+function Stepper({ value, onChange, step = 1, min = 0, unit }: {
+  value: string; onChange: (v: string) => void; step?: number; min?: number; unit?: string;
 }) {
   function adjust(delta: number) {
     const n = parseFloat(value) || 0;
     onChange(String(Math.max(min, Math.round((n + delta) * 100) / 100)));
   }
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1">
       <button onClick={() => adjust(-step)}
-        className="h-9 w-9 rounded-lg border border-border bg-muted/40 text-sm font-semibold hover:bg-muted transition-colors flex items-center justify-center shrink-0">
-        −
-      </button>
-      <div className="relative flex-1">
-        <input type="number" value={value} placeholder={placeholder}
-          onChange={e => onChange(e.target.value)}
-          className="w-full h-9 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring pr-7" />
-        {unit && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{unit}</span>}
+        className="h-8 w-8 rounded-md border border-border bg-muted/40 text-sm font-bold hover:bg-muted transition-colors flex items-center justify-center shrink-0">−</button>
+      <div className="relative w-20">
+        <input type="number" value={value} onChange={e => onChange(e.target.value)}
+          className="w-full h-8 rounded-md border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring pr-6" />
+        {unit && <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">{unit}</span>}
       </div>
       <button onClick={() => adjust(step)}
-        className="h-9 w-9 rounded-lg border border-border bg-muted/40 text-sm font-semibold hover:bg-muted transition-colors flex items-center justify-center shrink-0">
-        +
-      </button>
+        className="h-8 w-8 rounded-md border border-border bg-muted/40 text-sm font-bold hover:bg-muted transition-colors flex items-center justify-center shrink-0">+</button>
     </div>
   );
 }
 
-// ── Exercise picker ────────────────────────────────────────────────────────────
+// ── Exercise picker (inline) ───────────────────────────────────────────────────
 
-function ExercisePicker({ all, added, onAdd, onClose }: {
-  all: ExRow[]; added: number[]; onAdd: (e: ExRow) => void; onClose?: () => void;
+function ExercisePicker({ all, excluded, onAdd, onClose }: {
+  all: ExRow[]; excluded: number[]; onAdd: (e: ExRow) => void; onClose: () => void;
 }) {
   const [cat, setCat] = useState("");
   const [q, setQ]     = useState("");
   const visible = all
-    .filter(e => !added.includes(e.id))
+    .filter(e => !excluded.includes(e.id))
     .filter(e => !cat || e.category === cat)
-    .filter(e => !q || e.name.toLowerCase().includes(q.toLowerCase()))
+    .filter(e => !q   || e.name.toLowerCase().includes(q.toLowerCase()))
     .slice(0, 20);
 
   return (
@@ -120,29 +129,22 @@ function ExercisePicker({ all, added, onAdd, onClose }: {
       <div className="px-3 py-2.5 border-b border-border space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Add Exercise</p>
-          {onClose && (
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <button onClick={onClose}><X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" /></button>
         </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search exercises…" className="pl-8 h-8 text-sm" />
+          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" className="pl-8 h-8 text-sm" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
           {["", ...CATS].map(c => (
             <button key={c} onClick={() => setCat(c)}
-              className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize transition-colors ${
-                cat === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}>
+              className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize transition-colors ${cat === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
               {c || "all"}
             </button>
           ))}
         </div>
       </div>
-      <div className="max-h-44 overflow-y-auto divide-y divide-border/50">
+      <div className="max-h-40 overflow-y-auto divide-y divide-border/50">
         {visible.length === 0
           ? <p className="text-xs text-muted-foreground text-center py-4">No exercises found</p>
           : visible.map(ex => (
@@ -158,579 +160,757 @@ function ExercisePicker({ all, added, onAdd, onClose }: {
   );
 }
 
-// ── Exercise block (during workout execution) ──────────────────────────────────
+// ── Step 1: Split picker ───────────────────────────────────────────────────────
 
-function ExerciseBlock({ block, sessionId, prevWeight, onSetsChange, onRemove }: {
-  block: ExBlock; sessionId: number; prevWeight: number | null;
-  onSetsChange: (exerciseId: number, sets: SetEntry[]) => void;
-  onRemove: (exerciseId: number) => void;
-}) {
-  const lastSet = block.sets[block.sets.length - 1];
-  const [weight, setWeight] = useState(lastSet ? String(lastSet.weightKg) : prevWeight ? String(prevWeight) : "");
-  const [reps, setReps]     = useState(String(block.targetReps));
-  const [saving, setSaving] = useState(false);
+const SPLIT_ICONS: Record<string, string> = {
+  ppl: "P·P·L", upper_lower: "U·L", full_body: "FB", bro_split: "Bro", push_pull: "P·P",
+};
 
-  const targetSetsRemaining = 3 - block.sets.length; // visual hint
-
-  async function logSet(w: string, r: string) {
-    const weightKg = parseFloat(w);
-    const repsN    = parseInt(r);
-    if (isNaN(weightKg) || isNaN(repsN) || repsN < 1 || weightKg < 0) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/fitness/sessions/${sessionId}/sets`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exerciseId: block.exerciseId, reps: repsN, weightKg }),
-      });
-      if (!res.ok) return;
-      const set: SetEntry = await res.json();
-      onSetsChange(block.exerciseId, [...block.sets, set]);
-      setReps(String(block.targetReps)); // reset reps to target
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function sameAsLast() {
-    if (!lastSet) return;
-    await logSet(String(lastSet.weightKg), String(lastSet.reps));
-  }
-
-  async function removeSet(setId: number) {
-    await fetch(`/api/fitness/sets/${setId}`, { method: "DELETE" });
-    onSetsChange(block.exerciseId, block.sets.filter(s => s.id !== setId));
-  }
-
-  const canLog = !!weight && !!reps && !saving;
-  const allSetsLogged = block.sets.length >= 3;
-
+function SplitPicker({ splits, onSelect }: { splits: SplitMeta[]; onSelect: (s: SplitMeta) => void }) {
   return (
-    <div className={`rounded-xl border bg-card overflow-hidden transition-colors ${allSetsLogged ? "border-emerald-500/40" : "border-border"}`}>
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border">
-        <div className="flex-1 min-w-0">
-          <span className="font-semibold text-sm">{block.name}</span>
-          <span className="ml-2 text-[11px] text-muted-foreground">
-            {block.sets.length}/3 sets
-            {targetSetsRemaining > 0 && !allSetsLogged && <span className="text-amber-400"> · {targetSetsRemaining} left</span>}
-            {allSetsLogged && <span className="text-emerald-400"> · done</span>}
-          </span>
-        </div>
-        <CategoryBadge cat={block.category} />
-        <button onClick={() => onRemove(block.exerciseId)}
-          className="text-muted-foreground hover:text-rose-400 transition-colors ml-1">
-          <X className="h-3.5 w-3.5" />
-        </button>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-bold">Choose a split</h2>
+        <p className="text-sm text-muted-foreground">Select the training program for this week</p>
       </div>
-
-      {block.sets.length > 0 && (
-        <div className="px-4 py-2 space-y-0.5">
-          {block.sets.map(s => (
-            <div key={s.id} className="flex items-center gap-3 py-1 text-sm group">
-              <span className="w-4 text-xs text-muted-foreground tabular-nums">{s.setNumber}</span>
-              <Check className="h-3 w-3 text-emerald-400 shrink-0" />
-              <span className="flex-1 font-medium tabular-nums">{s.weightKg}kg × {s.reps}</span>
-              <button onClick={() => removeSet(s.id)}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-rose-400 transition-all">
-                <X className="h-3 w-3" />
-              </button>
+      <div className="grid grid-cols-1 gap-3">
+        {splits.map(s => (
+          <button key={s.id} onClick={() => onSelect(s)}
+            className="rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all group">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                {SPLIT_ICONS[s.slug] ?? "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm group-hover:text-primary transition-colors">{s.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{s.description}</p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {s.groups.map(g => (
+                    <span key={g.id} className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      {g.name} ({g.defaultCount})
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-      )}
-
-      {!allSetsLogged && (
-        <div className="px-4 py-3 border-t border-border bg-muted/20 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Weight</p>
-              <Stepper value={weight} onChange={setWeight} step={2.5} min={0} placeholder="kg" unit="kg" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Reps</p>
-              <Stepper value={reps} onChange={setReps} step={1} min={1} placeholder="reps" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {lastSet && (
-              <button onClick={sameAsLast} disabled={saving}
-                className="flex-1 h-9 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
-                <RotateCcw className="h-3.5 w-3.5" /> Same
-              </button>
-            )}
-            <button onClick={() => logSet(weight, reps)} disabled={!canLog}
-              className={`flex-1 h-9 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${
-                canLog ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted text-muted-foreground cursor-not-allowed"
-              }`}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Check className="h-4 w-4" />Log Set</>}
-            </button>
-          </div>
-        </div>
-      )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ── Active workout execution ────────────────────────────────────────────────────
+// ── Step 2: Frequency picker ───────────────────────────────────────────────────
 
-function ActiveSession({ sessionId, date, startedAt, allExercises, initialBlocks, onFinish, onDiscard }: {
-  sessionId: number; date: string; startedAt: number;
-  allExercises: ExRow[];
-  initialBlocks: ExBlock[];
-  onFinish: (durationMins: number) => void;
-  onDiscard: () => void;
+function FrequencyPicker({ split, onSelect, onBack }: {
+  split: SplitMeta; onSelect: (freq: number) => void; onBack: () => void;
 }) {
-  const [blocks, setBlocks]       = useState<ExBlock[]>(initialBlocks);
-  const [elapsed, setElapsed]     = useState(0);
-  const [finishing, setFinishing] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
-  const [prevWeights, setPrevWeights] = useState<Record<number, number>>({});
-
-  useEffect(() => {
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
-  // Fetch prev weight for each initial exercise
-  useEffect(() => {
-    initialBlocks.forEach(b => {
-      fetch(`/api/fitness/progress?exerciseId=${b.exerciseId}`)
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data) && data.length > 0) {
-            const last = data[data.length - 1];
-            setPrevWeights(p => ({ ...p, [b.exerciseId]: last.maxWeight }));
-          }
-        }).catch(() => {});
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function addExercise(ex: ExRow) {
-    if (blocks.find(b => b.exerciseId === ex.id)) return;
-    setBlocks(prev => [...prev, { exerciseId: ex.id, name: ex.name, category: ex.category, sets: [], targetReps: 12 }]);
-    fetch(`/api/fitness/progress?exerciseId=${ex.id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0)
-          setPrevWeights(p => ({ ...p, [ex.id]: data[data.length - 1].maxWeight }));
-      }).catch(() => {});
-    setShowPicker(false);
-  }
-
-  function updateSets(exerciseId: number, sets: SetEntry[]) {
-    setBlocks(prev => prev.map(b => b.exerciseId === exerciseId ? { ...b, sets } : b));
-  }
-
-  function removeBlock(exerciseId: number) {
-    setBlocks(prev => prev.filter(b => b.exerciseId !== exerciseId));
-  }
-
-  async function finish() {
-    setFinishing(true);
-    const durationMins = Math.max(1, Math.floor(elapsed / 60));
-    await fetch(`/api/fitness/sessions/${sessionId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ durationMins }),
-    });
-    onFinish(durationMins);
-  }
-
-  async function discard() {
-    await fetch(`/api/fitness/sessions/${sessionId}`, { method: "DELETE" });
-    onDiscard();
-  }
-
-  const totalSets  = blocks.reduce((s, b) => s + b.sets.length, 0);
-  const totalTarget = blocks.length * 3;
-  const allDone    = totalTarget > 0 && totalSets >= totalTarget;
+  const options = SPLIT_FREQ[split.slug] ?? [{ label: "Once", value: 1 }];
+  const [selected, setSelected] = useState(options[0].value);
 
   return (
     <div className="space-y-4">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 rounded-xl border border-border bg-card/95 backdrop-blur px-4 py-3 flex items-center gap-3">
-        <div className="flex-1">
-          <p className="text-sm font-semibold">{fmtDate(date)}</p>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="flex items-center gap-1 text-xs text-emerald-400 font-mono">
-              <Timer className="h-3 w-3" />{fmtDuration(elapsed)}
-            </span>
-            {totalTarget > 0 && (
-              <span className="text-xs text-muted-foreground">{totalSets}/{totalTarget} sets</span>
-            )}
-          </div>
-        </div>
-        <button onClick={discard} className="text-xs text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1">
-          Discard
-        </button>
-        <Button size="sm" onClick={finish} disabled={finishing || totalSets === 0}>
-          {finishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Check className="h-3.5 w-3.5 mr-1" />{allDone ? "Finish" : "Finish Early"}</>}
-        </Button>
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft className="h-3.5 w-3.5" /> Back
+      </button>
+      <div>
+        <h2 className="text-lg font-bold">{split.name}</h2>
+        <p className="text-sm text-muted-foreground">How often will you run this split this week?</p>
       </div>
-
-      {blocks.map(block => (
-        <ExerciseBlock
-          key={block.exerciseId}
-          block={block}
-          sessionId={sessionId}
-          prevWeight={prevWeights[block.exerciseId] ?? null}
-          onSetsChange={updateSets}
-          onRemove={removeBlock}
-        />
-      ))}
-
-      {showPicker
-        ? <ExercisePicker all={allExercises} added={blocks.map(b => b.exerciseId)} onAdd={addExercise} onClose={() => setShowPicker(false)} />
-        : (
-          <button onClick={() => setShowPicker(true)}
-            className="w-full flex items-center justify-center gap-2 h-11 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
-            <Plus className="h-4 w-4" /> Add Exercise
+      <div className="space-y-2">
+        {options.map(o => (
+          <button key={o.value} onClick={() => setSelected(o.value)}
+            className={`w-full rounded-xl border p-4 text-left transition-all ${selected === o.value ? "border-primary bg-primary/5" : "border-border hover:border-border/80 hover:bg-muted/20"}`}>
+            <div className="flex items-center gap-3">
+              <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${selected === o.value ? "border-primary" : "border-muted-foreground"}`}>
+                {selected === o.value && <div className="h-2 w-2 rounded-full bg-primary" />}
+              </div>
+              <p className="text-sm font-medium">{o.label}</p>
+            </div>
           </button>
-        )
-      }
+        ))}
+      </div>
+      <Button className="w-full" onClick={() => onSelect(selected)}>
+        Continue →
+      </Button>
     </div>
   );
 }
 
-// ── Day plan editor ────────────────────────────────────────────────────────────
+// ── Step 3: Exercise configurator ──────────────────────────────────────────────
 
-function DayEditor({ workout, allExercises, planId, onWorkoutUpdated, onWorkoutDeleted, onClose }: {
-  workout: PlannedWorkout;
+function ExerciseConfigurator({ groups, allExercises, loading, onBack, onSave }: {
+  groups: WeekGroup[];
   allExercises: ExRow[];
-  planId: number;
-  onWorkoutUpdated: (w: PlannedWorkout) => void;
-  onWorkoutDeleted: () => void;
-  onClose: () => void;
+  loading: boolean;
+  onBack: () => void;
+  onSave: (updatedGroups: WeekGroup[]) => Promise<void>;
 }) {
-  const [exercises, setExercises] = useState<PlannedEx[]>(workout.exercises);
+  const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  const [localGroups, setLocalGroups] = useState<WeekGroup[]>(groups);
   const [showPicker, setShowPicker] = useState(false);
-  const [savingEx, setSavingEx]   = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const group = localGroups[activeGroupIdx];
+
+  function updateExercise(exId: number, field: "targetSets" | "targetReps" | "targetWeight", val: number) {
+    setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
+      ...g,
+      exercises: g.exercises.map(ex => ex.id === exId ? { ...ex, [field]: val } : ex),
+    }));
+  }
+
+  async function removeExercise(wgeId: number) {
+    await fetch(`/api/fitness/week-group-exercises/${wgeId}`, { method: "DELETE" });
+    setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
+      ...g, exercises: g.exercises.filter(ex => ex.id !== wgeId),
+    }));
+  }
 
   async function addExercise(ex: ExRow) {
-    setSavingEx(true);
     setShowPicker(false);
-    try {
-      const res = await fetch(`/api/fitness/planned-workouts/${workout.id}/exercises`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exerciseId: ex.id }),
-      });
-      if (!res.ok) return;
-      const pe: PlannedEx = await res.json();
-      const next = [...exercises, pe];
-      setExercises(next);
-      onWorkoutUpdated({ ...workout, exercises: next });
-    } finally {
-      setSavingEx(false);
-    }
+    const res = await fetch(`/api/fitness/week-groups/${group.id}/exercises`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exerciseId: ex.id }),
+    });
+    if (!res.ok) return;
+    const newEx: WGExercise = await res.json();
+    setLocalGroups(prev => prev.map((g, i) => i !== activeGroupIdx ? g : {
+      ...g, exercises: [...g.exercises, newEx],
+    }));
   }
 
-  async function removeExercise(peId: number) {
-    await fetch(`/api/fitness/planned-exercises/${peId}`, { method: "DELETE" });
-    const next = exercises.filter(e => e.id !== peId);
-    setExercises(next);
-    onWorkoutUpdated({ ...workout, exercises: next });
-  }
-
-  async function updateTarget(peId: number, field: "targetSets" | "targetReps", val: number) {
-    const res = await fetch(`/api/fitness/planned-exercises/${peId}`, {
+  async function patchExercise(wgeId: number, field: string, val: number) {
+    await fetch(`/api/fitness/week-group-exercises/${wgeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: val }),
     });
-    if (!res.ok) return;
-    const next = exercises.map(e => e.id === peId ? { ...e, [field]: val } : e);
-    setExercises(next);
-    onWorkoutUpdated({ ...workout, exercises: next });
   }
 
-  async function deleteWorkout() {
-    await fetch(`/api/fitness/planned-workouts/${workout.id}`, { method: "DELETE" });
-    onWorkoutDeleted();
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Exercises</p>
-        <button onClick={deleteWorkout}
-          className="text-xs text-muted-foreground hover:text-rose-400 transition-colors">
-          Clear day
-        </button>
-      </div>
-
-      {exercises.length === 0 && !showPicker && (
-        <p className="text-xs text-muted-foreground text-center py-2">No exercises yet</p>
-      )}
-
-      {exercises.map(ex => (
-        <div key={ex.id} className="rounded-lg border border-border bg-card p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium flex-1">{ex.name}</span>
-            <CategoryBadge cat={ex.category} />
-            <button onClick={() => removeExercise(ex.id)}
-              className="text-muted-foreground hover:text-rose-400 transition-colors ml-1">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Sets</p>
-              <Stepper
-                value={String(ex.targetSets)}
-                onChange={v => updateTarget(ex.id, "targetSets", parseInt(v) || 3)}
-                step={1} min={1}
-              />
-            </div>
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Reps (min 12)</p>
-              <Stepper
-                value={String(ex.targetReps)}
-                onChange={v => updateTarget(ex.id, "targetReps", Math.max(12, parseInt(v) || 12))}
-                step={1} min={12}
-              />
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {showPicker
-        ? <ExercisePicker all={allExercises} added={exercises.map(e => e.exerciseId)} onAdd={addExercise} onClose={() => setShowPicker(false)} />
-        : (
-          <button onClick={() => setShowPicker(true)} disabled={savingEx}
-            className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
-            {savingEx ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4" />Add Exercise</>}
-          </button>
-        )
+  async function handleSave() {
+    setSaving(true);
+    // Persist any target changes for all groups
+    for (const g of localGroups) {
+      for (const ex of g.exercises) {
+        await patchExercise(ex.id, "targetSets",   ex.targetSets);
+        await patchExercise(ex.id, "targetReps",   ex.targetReps);
+        await patchExercise(ex.id, "targetWeight", ex.targetWeight ?? 0);
       }
-
-      <button onClick={onClose}
-        className="w-full h-9 rounded-lg bg-muted text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-        Done
-      </button>
-    </div>
-  );
-}
-
-// ── Week plan view ─────────────────────────────────────────────────────────────
-
-function WeekPlan({ plan, weekStart, allExercises, onStartWorkout, onPlanUpdated }: {
-  plan: Plan;
-  weekStart: string;
-  allExercises: ExRow[];
-  onStartWorkout: (workout: PlannedWorkout) => void;
-  onPlanUpdated: (p: Plan) => void;
-}) {
-  const [editingDay, setEditingDay] = useState<number | null>(null);
-  const [creatingDay, setCreatingDay] = useState<number | null>(null);
-  const today = new Date().toISOString().slice(0, 10);
-
-  function getWorkoutForDay(day: number) {
-    return plan.workouts.find(w => w.dayOfWeek === day) ?? null;
-  }
-
-  async function createWorkoutForDay(day: number) {
-    setCreatingDay(day);
-    try {
-      const res = await fetch(`/api/fitness/plans/${plan.id}/workouts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dayOfWeek: day }),
-      });
-      if (!res.ok) return;
-      const workout: PlannedWorkout = await res.json();
-      const updated: Plan = { ...plan, workouts: [...plan.workouts, workout] };
-      onPlanUpdated(updated);
-      setEditingDay(day);
-    } finally {
-      setCreatingDay(null);
     }
+    await onSave(localGroups);
+    setSaving(false);
   }
 
-  function handleWorkoutUpdated(day: number, w: PlannedWorkout) {
-    const updated: Plan = {
-      ...plan,
-      workouts: plan.workouts.map(pw => pw.dayOfWeek === day ? w : pw),
-    };
-    onPlanUpdated(updated);
-  }
-
-  function handleWorkoutDeleted(day: number) {
-    const updated: Plan = { ...plan, workouts: plan.workouts.filter(pw => pw.dayOfWeek !== day) };
-    onPlanUpdated(updated);
-    setEditingDay(null);
-  }
-
-  return (
-    <div className="space-y-2">
-      {DAYS.map((label, i) => {
-        const dayIndex = i + 1; // 1=Mon...7=Sun
-        const dayIso   = addDays(weekStart, i);
-        const isToday  = dayIso === today;
-        const isPast   = dayIso < today;
-        const workout  = getWorkoutForDay(dayIndex);
-        const isEditing = editingDay === dayIndex;
-
-        return (
-          <div key={dayIndex}
-            className={`rounded-xl border bg-card overflow-hidden transition-all ${
-              isToday ? "border-primary/50 ring-1 ring-primary/20" : "border-border"
-            }`}>
-
-            {/* Day header */}
-            <div className="flex items-center gap-3 px-4 py-3">
-              <div className="w-12 shrink-0">
-                <p className={`text-sm font-bold ${isToday ? "text-primary" : isPast ? "text-muted-foreground" : "text-foreground"}`}>{label}</p>
-                <p className="text-[11px] text-muted-foreground">{new Date(dayIso + "T00:00:00").getDate()}</p>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                {workout && workout.exercises.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {workout.exercises.slice(0, 3).map(ex => (
-                      <span key={ex.id} className="text-xs text-muted-foreground">{ex.name}</span>
-                    ))}
-                    {workout.exercises.length > 3 && (
-                      <span className="text-xs text-muted-foreground">+{workout.exercises.length - 3} more</span>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground/60">{workout ? "No exercises" : "Rest day"}</p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {workout && (isToday || isPast) && workout.exercises.length > 0 && (
-                  <Button size="sm" className="h-7 text-xs" onClick={() => onStartWorkout(workout)}>
-                    Start
-                  </Button>
-                )}
-                <button
-                  onClick={() => {
-                    if (!workout) {
-                      createWorkoutForDay(dayIndex);
-                    } else {
-                      setEditingDay(isEditing ? null : dayIndex);
-                    }
-                  }}
-                  className="h-7 w-7 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                  disabled={creatingDay === dayIndex}>
-                  {creatingDay === dayIndex
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : isEditing ? <X className="h-3.5 w-3.5" /> : workout ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />
-                  }
-                </button>
-              </div>
-            </div>
-
-            {/* Inline editor */}
-            {isEditing && workout && (
-              <div className="border-t border-border px-4 py-3">
-                <DayEditor
-                  workout={workout}
-                  allExercises={allExercises}
-                  planId={plan.id}
-                  onWorkoutUpdated={w => handleWorkoutUpdated(dayIndex, w)}
-                  onWorkoutDeleted={() => handleWorkoutDeleted(dayIndex)}
-                  onClose={() => setEditingDay(null)}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Log tab ────────────────────────────────────────────────────────────────────
-
-function LogTab({ allExercises }: { allExercises: ExRow[] }) {
-  const [weekStart, setWeekStart] = useState(() => getMondayOf(new Date()));
-  const [plan, setPlan]           = useState<Plan | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [creating, setCreating]   = useState(false);
-  const [active, setActive]       = useState<{ sessionId: number; date: string; startedAt: number; blocks: ExBlock[] } | null>(null);
-  const [sessions, setSessions]   = useState<Session[]>([]);
-
-  const loadPlan = useCallback(async (ws: string) => {
-    setLoading(true);
-    setPlan(null);
-    try {
-      const res = await fetch(`/api/fitness/plans?weekStart=${ws}`);
-      const data = await res.json();
-      setPlan(data ?? null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadPlan(weekStart); }, [weekStart, loadPlan]);
-
-  // Load recent sessions for history (only for current week view)
-  useEffect(() => {
-    fetch("/api/fitness/sessions").then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setSessions(d.slice(0, 5)); })
-      .catch(() => {});
-  }, []);
-
-  async function createPlan() {
-    setCreating(true);
-    try {
-      const res = await fetch("/api/fitness/plans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStart }),
-      });
-      const data = await res.json();
-      setPlan(data);
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function startWorkout(workout: PlannedWorkout) {
-    const res = await fetch(`/api/fitness/planned-workouts/${workout.id}/start`, { method: "POST" });
-    if (!res.ok) return;
-    const session: Session = await res.json();
-    const blocks: ExBlock[] = workout.exercises.map(ex => ({
-      exerciseId: ex.exerciseId,
-      name: ex.name,
-      category: ex.category,
-      sets: [],
-      targetReps: ex.targetReps,
-    }));
-    setActive({ sessionId: session.id, date: session.date, startedAt: Date.now(), blocks });
-  }
-
-  function onFinish(durationMins: number) {
-    if (!active) return;
-    setSessions(prev => [{ id: active.sessionId, date: active.date, durationMins }, ...prev]);
-    setActive(null);
-  }
-
-  function shiftWeek(delta: number) {
-    setWeekStart(prev => addDays(prev, delta * 7));
-  }
-
-  const isCurrentWeek = weekStart === getMondayOf(new Date());
-
-  if (active) {
+  if (loading) {
     return (
-      <ActiveSession
-        sessionId={active.sessionId} date={active.date} startedAt={active.startedAt}
-        allExercises={allExercises} initialBlocks={active.blocks}
-        onFinish={onFinish} onDiscard={() => setActive(null)}
-      />
+      <div className="space-y-3">
+        {Array.from({length:4},(_,i)=><div key={i} className="h-20 rounded-xl bg-muted animate-pulse"/>)}
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div>
+          <h2 className="text-base font-bold">Set weekly goals</h2>
+          <p className="text-xs text-muted-foreground">Target weight + reps for each exercise this week</p>
+        </div>
+      </div>
+
+      {/* Group tabs */}
+      <div className="flex gap-1 p-1 rounded-xl border border-border bg-muted/30 overflow-x-auto">
+        {localGroups.map((g, i) => (
+          <button key={g.id} onClick={() => { setActiveGroupIdx(i); setShowPicker(false); }}
+            className={`flex-1 min-w-fit px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              i === activeGroupIdx ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}>
+            {g.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Exercise cards for active group */}
+      <div className="space-y-3">
+        {group?.exercises.length === 0 && !showPicker && (
+          <p className="text-xs text-muted-foreground text-center py-3">No exercises yet — add some below</p>
+        )}
+
+        {group?.exercises.map(ex => (
+          <div key={ex.id} className="rounded-xl border border-border bg-card p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold flex-1">{ex.exerciseName}</span>
+              <CategoryBadge cat={ex.category} />
+              <button onClick={() => removeExercise(ex.id)}
+                className="text-muted-foreground hover:text-rose-400 transition-colors ml-1">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {ex.lastWeight !== null && (
+              <p className="text-[11px] text-muted-foreground">
+                Last session: <span className="font-medium text-foreground">{ex.lastWeight}kg</span>
+              </p>
+            )}
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Sets</p>
+                <Stepper value={String(ex.targetSets)} step={1} min={1}
+                  onChange={v => updateExercise(ex.id, "targetSets", parseInt(v)||3)} />
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Reps</p>
+                <Stepper value={String(ex.targetReps)} step={1} min={1}
+                  onChange={v => updateExercise(ex.id, "targetReps", Math.max(1, parseInt(v)||12))} />
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Target kg</p>
+                <Stepper value={ex.targetWeight !== null ? String(ex.targetWeight) : ""} step={2.5} min={0} unit="kg"
+                  onChange={v => updateExercise(ex.id, "targetWeight", parseFloat(v)||0)} />
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {showPicker
+          ? <ExercisePicker
+              all={allExercises}
+              excluded={group?.exercises.map(e => e.exerciseId) ?? []}
+              onAdd={addExercise}
+              onClose={() => setShowPicker(false)}
+            />
+          : (
+            <button onClick={() => setShowPicker(true)}
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+              <Plus className="h-4 w-4" /> Add Exercise
+            </button>
+          )
+        }
+      </div>
+
+      <Button className="w-full" onClick={handleSave} disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+        Save Plan
+      </Button>
+    </div>
+  );
+}
+
+// ── Workout logging view ───────────────────────────────────────────────────────
+
+function WorkoutView({ availableGroups, date, onSaved, onBack }: {
+  availableGroups: WeekGroup[];
+  date: string;
+  onSaved: (workout: DayWorkout) => void;
+  onBack: () => void;
+}) {
+  const [selectedGroup, setSelectedGroup] = useState<WeekGroup | null>(
+    availableGroups.length === 1 ? availableGroups[0] : null
+  );
+  const [sets, setSets] = useState<SetDraft[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  // Build set drafts when group is selected
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const drafts: SetDraft[] = [];
+    for (const ex of selectedGroup.exercises) {
+      for (let s = 1; s <= ex.targetSets; s++) {
+        drafts.push({
+          weekGroupExerciseId: ex.id,
+          exerciseId: ex.exerciseId,
+          exerciseName: ex.exerciseName,
+          setNumber: s,
+          targetWeight: ex.targetWeight,
+          targetReps: ex.targetReps,
+          actualWeight: ex.targetWeight !== null ? String(ex.targetWeight) : "",
+          actualReps: String(ex.targetReps),
+          completed: false,
+        });
+      }
+    }
+    setSets(drafts);
+  }, [selectedGroup]);
+
+  function updateSet(idx: number, field: "actualWeight" | "actualReps" | "completed", val: string | boolean) {
+    setSets(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s));
+  }
+
+  function toggleSet(idx: number) {
+    setSets(prev => prev.map((s, i) => i === idx ? { ...s, completed: !s.completed } : s));
+  }
+
+  async function save() {
+    const completedSets = sets.filter(s => s.completed);
+    if (completedSets.length === 0) { setSaveError("Complete at least one set."); return; }
+    setSaving(true); setSaveError("");
+    try {
+      const res = await fetch("/api/fitness/day-workouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          weekGroupId: selectedGroup?.id ?? null,
+          date,
+          sets: sets.map(s => ({
+            weekGroupExerciseId: s.weekGroupExerciseId,
+            exerciseId: s.exerciseId,
+            setNumber: s.setNumber,
+            targetWeight: s.targetWeight,
+            targetReps: s.targetReps,
+            actualWeight: parseFloat(s.actualWeight) || null,
+            actualReps: parseInt(s.actualReps) || null,
+            completed: s.completed,
+          })),
+        }),
+      });
+      if (!res.ok) { setSaveError("Failed to save workout."); return; }
+      const dw: DayWorkout & { setCount: number } = await res.json();
+      onSaved({ ...dw, groupName: selectedGroup?.name ?? null });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Group selector
+  if (!selectedGroup) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div>
+            <h2 className="text-base font-bold">{fmtDate(date)}</h2>
+            <p className="text-xs text-muted-foreground">Which muscle group today?</p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {availableGroups.map(g => (
+            <button key={g.id} onClick={() => setSelectedGroup(g)}
+              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-sm">{g.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {g.exercises.length} exercise{g.exercises.length !== 1 ? "s" : ""}
+                    {g.exercises[0] && ` · ${g.exercises[0].exerciseName}${g.exercises.length > 1 ? `, …` : ""}`}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Group by exercise for display
+  const exerciseMap = new Map<number, { ex: WGExercise; sets: { draft: SetDraft; idx: number }[] }>();
+  sets.forEach((s, idx) => {
+    const exId = s.weekGroupExerciseId;
+    if (!exerciseMap.has(exId)) {
+      const ex = selectedGroup.exercises.find(e => e.id === exId)!;
+      exerciseMap.set(exId, { ex, sets: [] });
+    }
+    exerciseMap.get(exId)!.sets.push({ draft: s, idx });
+  });
+
+  const completedCount = sets.filter(s => s.completed).length;
+  const totalCount     = sets.length;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => setSelectedGroup(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div className="flex-1">
+          <h2 className="text-base font-bold">{selectedGroup.name} · {fmtDate(date)}</h2>
+          <p className="text-xs text-muted-foreground">{completedCount}/{totalCount} sets completed</p>
+        </div>
+      </div>
+
+      {/* Exercise cards */}
+      {Array.from(exerciseMap.values()).map(({ ex, sets: exSets }) => {
+        const allDone = exSets.every(s => s.draft.completed);
+        return (
+          <div key={ex.id} className={`rounded-xl border bg-card overflow-hidden transition-colors ${allDone ? "border-emerald-500/40" : "border-border"}`}>
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+              <span className="font-semibold text-sm flex-1">{ex.exerciseName}</span>
+              <CategoryBadge cat={ex.category} />
+              {ex.lastWeight !== null && (
+                <span className="text-[11px] text-muted-foreground">Last: {ex.lastWeight}kg</span>
+              )}
+              {allDone && <Check className="h-4 w-4 text-emerald-400 shrink-0" />}
+            </div>
+
+            {/* Set rows */}
+            <div className="divide-y divide-border/50">
+              {exSets.map(({ draft: s, idx }) => (
+                <div key={idx} className={`px-4 py-3 transition-colors ${s.completed ? "bg-emerald-500/5" : ""}`}>
+                  <div className="flex items-center gap-3">
+                    {/* Set number */}
+                    <span className="w-5 text-xs text-muted-foreground font-medium shrink-0">#{s.setNumber}</span>
+
+                    {/* Weight */}
+                    <div className="flex items-center gap-1 flex-1">
+                      <input
+                        type="number"
+                        value={s.actualWeight}
+                        onChange={e => updateSet(idx, "actualWeight", e.target.value)}
+                        placeholder={s.targetWeight ? String(s.targetWeight) : "kg"}
+                        className="w-20 h-9 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <span className="text-xs text-muted-foreground">kg</span>
+                    </div>
+
+                    <span className="text-xs text-muted-foreground">×</span>
+
+                    {/* Reps */}
+                    <div className="flex items-center gap-1 flex-1">
+                      <input
+                        type="number"
+                        value={s.actualReps}
+                        onChange={e => updateSet(idx, "actualReps", e.target.value)}
+                        placeholder={String(s.targetReps)}
+                        className="w-16 h-9 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <span className="text-xs text-muted-foreground">reps</span>
+                    </div>
+
+                    {/* Done checkbox */}
+                    <button onClick={() => toggleSet(idx)}
+                      className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${
+                        s.completed
+                          ? "border-emerald-500 bg-emerald-500 text-white"
+                          : "border-border hover:border-emerald-400"
+                      }`}>
+                      {s.completed && <Check className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {/* Show target as reference */}
+                  {(s.targetWeight || s.targetReps) && !s.completed && (
+                    <p className="text-[10px] text-muted-foreground mt-1.5 pl-8">
+                      Target: {s.targetWeight ? `${s.targetWeight}kg` : "–"} × {s.targetReps}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {saveError && <p className="text-xs text-rose-400 text-center">{saveError}</p>}
+
+      <Button className="w-full" size="lg" onClick={save} disabled={saving || completedCount === 0}>
+        {saving
+          ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          : <Check className="h-4 w-4 mr-2" />
+        }
+        {saving ? "Saving…" : `Save Workout (${completedCount} set${completedCount !== 1 ? "s" : ""})`}
+      </Button>
+    </div>
+  );
+}
+
+// ── Week view ──────────────────────────────────────────────────────────────────
+
+function WeekView({ plan, weekStart, onAddSplit, onRemoveSplit, onEditGroup, onStartWorkout }: {
+  plan: WeekPlan;
+  weekStart: string;
+  onAddSplit: () => void;
+  onRemoveSplit: (weekSplitId: number) => void;
+  onEditGroup: (group: WeekGroup) => void;
+  onStartWorkout: (date: string) => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [removing, setRemoving] = useState<number | null>(null);
+
+  async function removeSplit(wsId: number) {
+    setRemoving(wsId);
+    await fetch(`/api/fitness/week-splits/${wsId}`, { method: "DELETE" });
+    onRemoveSplit(wsId);
+    setRemoving(null);
+  }
+
+  // Total available groups across all splits
+  const allGroups = plan.splits.flatMap(ws => ws.groups);
+
+  return (
+    <div className="space-y-5">
+      {/* Split summary cards */}
+      {plan.splits.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-6 text-center space-y-3">
+          <Dumbbell className="h-8 w-8 text-muted-foreground mx-auto" />
+          <p className="text-sm font-medium">No splits planned yet</p>
+          <p className="text-xs text-muted-foreground">Set up your training program for this week</p>
+          <Button size="sm" onClick={onAddSplit}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add Split
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {plan.splits.map(ws => (
+            <div key={ws.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-sm">{ws.splitName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {ws.frequency}× per week · {ws.groups.length} muscle group{ws.groups.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <button onClick={() => removeSplit(ws.id)} disabled={removing === ws.id}
+                  className="text-muted-foreground hover:text-rose-400 transition-colors mt-0.5">
+                  {removing === ws.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+
+              {/* Group tags */}
+              <div className="flex flex-wrap gap-2">
+                {ws.groups.map(g => (
+                  <button key={g.id} onClick={() => onEditGroup(g)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-muted/30 hover:bg-muted/60 transition-colors group">
+                    <span className="text-xs font-medium">{g.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{g.exercises.length} ex</span>
+                    <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <button onClick={onAddSplit}
+            className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+            <Plus className="h-4 w-4" /> Add another split
+          </button>
+        </div>
+      )}
+
+      {/* Day grid */}
+      {plan.splits.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">This week</p>
+          {DAYS.map((label, i) => {
+            const dayIso    = addDays(weekStart, i);
+            const isToday   = dayIso === today;
+            const isPast    = dayIso < today;
+            const doneToday = plan.dayWorkouts.filter(dw => dw.date === dayIso && dw.completedAt);
+            const canStart  = (isToday || isPast) && allGroups.length > 0;
+
+            return (
+              <div key={i} className={`rounded-xl border bg-card px-4 py-3 flex items-center gap-3 ${isToday ? "border-primary/50 ring-1 ring-primary/20" : "border-border"}`}>
+                <div className="w-12 shrink-0">
+                  <p className={`text-sm font-bold ${isToday ? "text-primary" : isPast ? "text-muted-foreground" : ""}`}>{label}</p>
+                  <p className="text-[11px] text-muted-foreground">{new Date(dayIso + "T00:00:00").getDate()}</p>
+                </div>
+                <div className="flex-1 min-w-0">
+                  {doneToday.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {doneToday.map(dw => (
+                        <span key={dw.id} className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                          <Check className="h-3 w-3" />{dw.groupName ?? "Workout"}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/60">Rest day</p>
+                  )}
+                </div>
+                {canStart && (
+                  <Button size="sm" className="h-7 text-xs shrink-0" onClick={() => onStartWorkout(dayIso)}>
+                    {doneToday.length > 0 ? "+ Log More" : "Start"}
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Plan tab ───────────────────────────────────────────────────────────────────
+
+type PlanView =
+  | { type: "week" }
+  | { type: "pick-split" }
+  | { type: "pick-freq"; split: SplitMeta }
+  | { type: "configure"; weekSplitData: WeekSplit }
+  | { type: "edit-group"; group: WeekGroup }
+  | { type: "workout"; date: string };
+
+function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
+  const [weekStart, setWeekStart]   = useState(() => getMondayOf(new Date()));
+  const [plan, setPlan]             = useState<WeekPlan | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState(true);
+  const [splits, setSplits]         = useState<SplitMeta[]>([]);
+  const [view, setView]             = useState<PlanView>({ type: "week" });
+  const [addingSplit, setAddingSplit] = useState(false);
+  const [configuringGroups, setConfiguringGroups] = useState<WeekGroup[] | null>(null);
+
+  const loadPlan = useCallback(async (ws: string) => {
+    setLoadingPlan(true);
+    const res = await fetch(`/api/fitness/week-plan?weekStart=${ws}`);
+    const data = await res.json();
+    if (!data) {
+      // Auto-create plan
+      const res2 = await fetch("/api/fitness/week-plan", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart: ws }),
+      });
+      const created = await res2.json();
+      setPlan(created);
+    } else {
+      setPlan(data);
+    }
+    setLoadingPlan(false);
+  }, []);
+
+  useEffect(() => { loadPlan(weekStart); }, [weekStart, loadPlan]);
+
+  useEffect(() => {
+    fetch("/api/fitness/splits").then(r => r.json()).then(d => { if (Array.isArray(d)) setSplits(d); });
+  }, []);
+
+  // Returns all available groups the user hasn't logged for a given date
+  function getAvailableGroups(date: string): WeekGroup[] {
+    if (!plan) return [];
+    const doneTodayGroupIds = plan.dayWorkouts
+      .filter(dw => dw.date === date && dw.completedAt && dw.weekGroupId !== null)
+      .map(dw => dw.weekGroupId!);
+
+    // Count how many times each group has been done this week vs frequency
+    const allGroups = plan.splits.flatMap(ws =>
+      ws.groups.map(g => ({ ...g, frequency: ws.frequency }))
+    );
+    const weekDoneCount: Record<number, number> = {};
+    plan.dayWorkouts.filter(dw => dw.completedAt && dw.weekGroupId).forEach(dw => {
+      weekDoneCount[dw.weekGroupId!] = (weekDoneCount[dw.weekGroupId!] ?? 0) + 1;
+    });
+
+    return allGroups.filter(g => {
+      const doneCount = weekDoneCount[g.id] ?? 0;
+      return doneCount < g.frequency;
+    });
+  }
+
+  async function handleSplitSelected(split: SplitMeta, frequency: number) {
+    if (!plan) return;
+    setAddingSplit(true);
+    const res = await fetch(`/api/fitness/week-plan/${plan.id}/splits`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ splitId: split.id, frequency, useDefaults: true }),
+    });
+    const newSplit: WeekSplit = await res.json();
+    setPlan(prev => prev ? { ...prev, splits: [...prev.splits, newSplit] } : prev);
+    setConfiguringGroups(newSplit.groups);
+    setView({ type: "configure", weekSplitData: newSplit });
+    setAddingSplit(false);
+  }
+
+  function handleRemoveSplit(weekSplitId: number) {
+    setPlan(prev => prev ? { ...prev, splits: prev.splits.filter(ws => ws.id !== weekSplitId) } : prev);
+  }
+
+  function handleWorkoutSaved(dw: DayWorkout) {
+    setPlan(prev => prev ? { ...prev, dayWorkouts: [...prev.dayWorkouts, dw] } : prev);
+    setView({ type: "week" });
+  }
+
+  const isCurrentWeek = weekStart === getMondayOf(new Date());
+
+  // ── View routing ──────────────────────────────────────────────────────────────
+
+  if (loadingPlan) {
+    return <div className="space-y-3">{Array.from({length:5},(_,i)=><div key={i} className="h-14 rounded-xl bg-muted animate-pulse"/>)}</div>;
+  }
+
+  if (view.type === "pick-split") {
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setView({ type:"week" })} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-3.5 w-3.5" /> Back
+        </button>
+        <SplitPicker splits={splits} onSelect={s => setView({ type:"pick-freq", split: s })} />
+      </div>
+    );
+  }
+
+  if (view.type === "pick-freq") {
+    return (
+      <div>
+        {addingSplit
+          ? <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Setting up plan…</div>
+          : <FrequencyPicker
+              split={view.split}
+              onBack={() => setView({ type:"pick-split" })}
+              onSelect={freq => handleSplitSelected(view.split, freq)}
+            />
+        }
+      </div>
+    );
+  }
+
+  if (view.type === "configure" || view.type === "edit-group") {
+    const groups = view.type === "configure"
+      ? (configuringGroups ?? view.weekSplitData.groups)
+      : [view.group];
+
+    return (
+      <ExerciseConfigurator
+        groups={groups}
+        allExercises={allExercises}
+        loading={false}
+        onBack={() => setView({ type:"week" })}
+        onSave={async () => { await loadPlan(weekStart); setView({ type:"week" }); }}
+      />
+    );
+  }
+
+  if (view.type === "workout") {
+    const availableGroups = getAvailableGroups(view.date);
+    if (availableGroups.length === 0) {
+      return (
+        <div className="space-y-4">
+          <button onClick={() => setView({ type:"week" })} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-3.5 w-3.5" /> Back
+          </button>
+          <div className="rounded-xl border border-dashed border-border p-8 text-center">
+            <p className="text-sm font-medium">All groups logged for today</p>
+            <p className="text-xs text-muted-foreground mt-1">You&apos;ve completed all your planned muscle groups.</p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <WorkoutView
+        availableGroups={availableGroups}
+        date={view.date}
+        onSaved={handleWorkoutSaved}
+        onBack={() => setView({ type:"week" })}
+      />
+    );
+  }
+
+  // Default: week view
+  return (
+    <div className="space-y-4">
       {/* Week navigation */}
       <div className="flex items-center justify-between">
-        <button onClick={() => shiftWeek(-1)}
+        <button onClick={() => setWeekStart(prev => addDays(prev, -7))}
           className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -738,94 +918,22 @@ function LogTab({ allExercises }: { allExercises: ExRow[] }) {
           <p className="text-sm font-semibold">{fmtWeekRange(weekStart)}</p>
           {isCurrentWeek && <p className="text-[11px] text-primary">This week</p>}
         </div>
-        <button onClick={() => shiftWeek(1)}
+        <button onClick={() => setWeekStart(prev => addDays(prev, 7))}
           className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 
-      {loading ? (
-        Array.from({ length: 7 }, (_, i) => <div key={i} className="h-14 rounded-xl bg-muted animate-pulse" />)
-      ) : !plan ? (
-        <div className="rounded-xl border border-dashed border-border p-8 text-center space-y-3">
-          <p className="text-sm font-medium">No plan for this week</p>
-          <p className="text-xs text-muted-foreground">Plan your workouts for the week, sprint-style.</p>
-          <Button onClick={createPlan} disabled={creating} size="sm">
-            {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Create Week Plan
-          </Button>
-        </div>
-      ) : (
-        <WeekPlan
-          plan={plan} weekStart={weekStart} allExercises={allExercises}
-          onStartWorkout={startWorkout} onPlanUpdated={setPlan}
+      {plan && (
+        <WeekView
+          plan={plan}
+          weekStart={weekStart}
+          onAddSplit={() => setView({ type:"pick-split" })}
+          onRemoveSplit={handleRemoveSplit}
+          onEditGroup={g => setView({ type:"edit-group", group: g })}
+          onStartWorkout={date => setView({ type:"workout", date })}
         />
       )}
-
-      {/* Quick-start ad hoc (no plan) */}
-      {plan && (
-        <details className="group">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            Start ad-hoc workout (no plan)
-            <ChevronDown className="h-3.5 w-3.5 ml-auto group-open:rotate-180 transition-transform" />
-          </summary>
-          <div className="mt-3">
-            <AdHocWorkout allExercises={allExercises} onStart={setActive} />
-          </div>
-        </details>
-      )}
-
-      {/* Recent sessions */}
-      {sessions.length > 0 && !plan && (
-        <div className="space-y-2 pt-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Recent</p>
-          {sessions.map(s => (
-            <div key={s.id} className="rounded-xl border border-border bg-card px-4 py-3 flex items-center justify-between">
-              <p className="text-sm font-medium">{fmtDate(s.date)}</p>
-              {s.durationMins && <span className="text-xs text-muted-foreground">{s.durationMins} min</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Ad hoc workout (no plan) ───────────────────────────────────────────────────
-
-function AdHocWorkout({ allExercises, onStart }: {
-  allExercises: ExRow[];
-  onStart: (s: { sessionId: number; date: string; startedAt: number; blocks: ExBlock[] }) => void;
-}) {
-  const [starting, setStarting] = useState(false);
-  const [error, setError]       = useState("");
-
-  async function start() {
-    setStarting(true); setError("");
-    try {
-      const res = await fetch("/api/fitness/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: new Date().toISOString().slice(0, 10) }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.id) { setError(data.error ?? "Could not start"); return; }
-      onStart({ sessionId: data.id, date: data.date, startedAt: Date.now(), blocks: [] });
-    } catch {
-      setError("Network error");
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <Button onClick={start} disabled={starting} className="w-full" variant="outline">
-        {starting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Dumbbell className="h-4 w-4 mr-2" />}
-        Start Empty Workout
-      </Button>
-      {error && <p className="text-xs text-rose-400 text-center">{error}</p>}
     </div>
   );
 }
@@ -837,7 +945,7 @@ function ProgressTab() {
   const [selectedId, setSelectedId]           = useState<number | null>(null);
   const [data, setData]                       = useState<ProgressPt[]>([]);
   const [loading, setLoading]                 = useState(false);
-  const [unit, setUnit]                       = useState<"kg" | "lbs">("kg");
+  const [unit, setUnit]                       = useState<"kg"|"lbs">("kg");
 
   useEffect(() => {
     fetch("/api/fitness/exercises?logged=true").then(r => r.json())
@@ -859,7 +967,7 @@ function ProgressTab() {
   if (loggedExercises.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border p-8 text-center">
-        <p className="text-sm text-muted-foreground">Log some workouts first to see your progress here.</p>
+        <p className="text-sm text-muted-foreground">Log some workouts first to see progress.</p>
       </div>
     );
   }
@@ -872,10 +980,10 @@ function ProgressTab() {
             className="w-full appearance-none rounded-lg border border-border bg-card px-3 py-2 text-sm pr-8 focus:outline-none">
             {loggedExercises.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
           </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <ChevronRight className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none rotate-90" />
         </div>
         <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
-          {(["kg", "lbs"] as const).map(uu => (
+          {(["kg","lbs"] as const).map(uu => (
             <button key={uu} onClick={() => setUnit(uu)}
               className={`px-3 py-2 transition-colors ${unit === uu ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               {uu}
@@ -891,39 +999,19 @@ function ProgressTab() {
       ) : (
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+            <LineChart data={chartData} margin={{ top:4, right:8, bottom:0, left:-16 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} />
-              <YAxis tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} unit={u} />
-              <Tooltip contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+              <XAxis dataKey="date" tick={{ fontSize:10, fill:"var(--muted-foreground)" }} />
+              <YAxis tick={{ fontSize:10, fill:"var(--muted-foreground)" }} unit={u} />
+              <Tooltip contentStyle={{ backgroundColor:"var(--card)", border:"1px solid var(--border)", borderRadius:8, fontSize:12 }}
                 formatter={(v: unknown) => [`${v}${u}`, ""]} />
-              <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={2} dot={{ fill: "#10b981", r: 3 }} name="Max weight" />
+              <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={2} dot={{ fill:"#10b981", r:3 }} name="Max weight" />
               <Line type="monotone" dataKey="e1RM" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" dot={false} name="Est. 1RM" />
             </LineChart>
           </ResponsiveContainer>
           <div className="flex gap-4 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-500 inline-block" />Max weight</span>
-            <span className="flex items-center gap-1.5"><span className="h-px w-4 border-t-2 border-dashed border-indigo-500 inline-block" />Est. 1RM</span>
-          </div>
-        </div>
-      )}
-
-      {data.length > 0 && (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Session Log</p>
-          </div>
-          <div className="divide-y divide-border">
-            {[...data].reverse().slice(0, 8).map(d => (
-              <div key={d.date} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <span className="text-muted-foreground text-xs">{fmtDate(d.date)}</span>
-                <div className="flex items-center gap-4 tabular-nums">
-                  <span className="text-xs text-muted-foreground">{conv(d.volume)}{u} vol</span>
-                  <span className="font-medium">{conv(d.maxWeight)}{u}</span>
-                  <span className="text-[11px] text-indigo-400">{conv(d.max1RM)}{u} 1RM</span>
-                </div>
-              </div>
-            ))}
+            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-500 inline-block"/>Max weight</span>
+            <span className="flex items-center gap-1.5"><span className="h-px w-4 border-t-2 border-dashed border-indigo-500 inline-block"/>Est. 1RM</span>
           </div>
         </div>
       )}
@@ -934,8 +1022,8 @@ function ProgressTab() {
 // ── Muscles tab ────────────────────────────────────────────────────────────────
 
 function MusclesTab() {
-  const [days, setDays]     = useState(7);
-  const [data, setData]     = useState<MuscleFreq[]>([]);
+  const [days, setDays]       = useState(7);
+  const [data, setData]       = useState<MuscleFreq[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -946,50 +1034,50 @@ function MusclesTab() {
   }, [days]);
 
   const maxSessions = Math.max(...data.map(d => d.sessions), 1);
-  const IDEAL: Record<string, number> = { push: 2, pull: 2, legs: 2, core: 3, cardio: 2, other: 1 };
+  const IDEAL: Record<string, number> = { push:2, pull:2, legs:2, core:3, cardio:2, other:1 };
 
   return (
     <div className="space-y-5">
       <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium w-fit">
-        {[7, 14, 30].map(d => (
+        {[7,14,30].map(d => (
           <button key={d} onClick={() => setDays(d)}
-            className={`px-3 py-2 transition-colors ${days === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+            className={`px-3 py-2 transition-colors ${days===d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
             {d}d
           </button>
         ))}
       </div>
 
-      {loading ? (
-        Array.from({ length: 6 }, (_, i) => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)
-      ) : (
-        <div className="space-y-3">
-          {data.map(d => {
-            const ideal = IDEAL[d.category] ?? 1;
-            const weekRatio = days === 7 ? d.sessions / ideal : d.sessions / (ideal * Math.round(days / 7));
-            const statusColor = d.sessions === 0 ? "text-muted-foreground" : weekRatio >= 1 ? "text-emerald-400" : weekRatio >= 0.5 ? "text-amber-400" : "text-rose-400";
-            return (
-              <div key={d.category} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CAT_COLOR[d.category] }} />
-                    <span className="text-sm font-semibold capitalize">{d.category}</span>
-                    <span className="text-[11px] text-muted-foreground hidden sm:inline">{d.muscles.join(", ")}</span>
+      {loading
+        ? Array.from({length:6},(_,i)=><div key={i} className="h-16 rounded-xl bg-muted animate-pulse"/>)
+        : (
+          <div className="space-y-3">
+            {data.map(d => {
+              const ideal = IDEAL[d.category] ?? 1;
+              const weekRatio = days === 7 ? d.sessions/ideal : d.sessions/(ideal*Math.round(days/7));
+              const statusColor = d.sessions===0 ? "text-muted-foreground" : weekRatio>=1 ? "text-emerald-400" : weekRatio>=0.5 ? "text-amber-400" : "text-rose-400";
+              return (
+                <div key={d.category} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CAT_COLOR[d.category] }} />
+                      <span className="text-sm font-semibold capitalize">{d.category}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {d.sets > 0 && <span className="text-[11px] text-muted-foreground">{d.sets} sets</span>}
+                      <span className={`text-sm font-bold tabular-nums ${statusColor}`}>{d.sessions}</span>
+                      <span className="text-xs text-muted-foreground">session{d.sessions!==1?"s":""}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {d.sets > 0 && <span className="text-[11px] text-muted-foreground">{d.sets} sets</span>}
-                    <span className={`text-sm font-bold tabular-nums ${statusColor}`}>{d.sessions}</span>
-                    <span className="text-xs text-muted-foreground">session{d.sessions !== 1 ? "s" : ""}</span>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{ width:`${(d.sessions/maxSessions)*100}%`, backgroundColor:CAT_COLOR[d.category] }}/>
                   </div>
                 </div>
-                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${(d.sessions / maxSessions) * 100}%`, backgroundColor: CAT_COLOR[d.category] }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )
+      }
     </div>
   );
 }
@@ -997,13 +1085,13 @@ function MusclesTab() {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "log",      label: "Plan",     icon: Dumbbell   },
-  { id: "progress", label: "Progress", icon: TrendingUp  },
-  { id: "muscles",  label: "Muscles",  icon: Activity   },
+  { id:"plan",     label:"Plan",     icon:Dumbbell   },
+  { id:"progress", label:"Progress", icon:TrendingUp  },
+  { id:"muscles",  label:"Muscles",  icon:Activity   },
 ] as const;
 
 export default function FitnessPage() {
-  const [tab, setTab]          = useState<"log" | "progress" | "muscles">("log");
+  const [tab, setTab]          = useState<"plan"|"progress"|"muscles">("plan");
   const [allExercises, setAll] = useState<ExRow[]>([]);
 
   useEffect(() => {
@@ -1015,7 +1103,7 @@ export default function FitnessPage() {
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Fitness</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Plan your week, track progress, stay balanced</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Plan your splits, hit your targets, track progress</p>
       </div>
 
       <div className="flex rounded-xl border border-border bg-muted/30 p-1 gap-1">
@@ -1029,7 +1117,7 @@ export default function FitnessPage() {
         ))}
       </div>
 
-      {tab === "log"      && <LogTab allExercises={allExercises} />}
+      {tab === "plan"     && <PlanTab allExercises={allExercises} />}
       {tab === "progress" && <ProgressTab />}
       {tab === "muscles"  && <MusclesTab />}
     </div>

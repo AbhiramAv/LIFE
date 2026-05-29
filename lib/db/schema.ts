@@ -193,29 +193,84 @@ export const announcements = pgTable("announcements", {
   createdBy:  text("created_by").notNull(),
 });
 
-// ─── Fitness Planning ─────────────────────────────────────────────────────────
+// ─── Fitness — Split system ───────────────────────────────────────────────────
 
-export const workoutPlans = pgTable("workout_plans", {
+export const splits = pgTable("splits", {
+  id:          serial("id").primaryKey(),
+  name:        text("name").notNull(),
+  slug:        text("slug").notNull(),
+  description: text("description"),
+  isSystem:    boolean("is_system").notNull().default(true),
+  createdAt:   text("created_at").notNull().default(sql`now()`),
+});
+
+export const splitGroups = pgTable("split_groups", {
+  id:        serial("id").primaryKey(),
+  splitId:   integer("split_id").notNull().references(() => splits.id, { onDelete: "cascade" }),
+  name:      text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const splitGroupDefaults = pgTable("split_group_defaults", {
+  id:           serial("id").primaryKey(),
+  splitGroupId: integer("split_group_id").notNull().references(() => splitGroups.id, { onDelete: "cascade" }),
+  exerciseId:   integer("exercise_id").notNull().references(() => exercises.id),
+  sortOrder:    integer("sort_order").notNull().default(0),
+});
+
+export const userWeekPlans = pgTable("user_week_plans", {
   id:        serial("id").primaryKey(),
   userId:    text("user_id").notNull(),
-  weekStart: text("week_start").notNull(), // Monday YYYY-MM-DD
+  weekStart: text("week_start").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
-export const plannedWorkouts = pgTable("planned_workouts", {
-  id:        serial("id").primaryKey(),
-  planId:    integer("plan_id").notNull().references(() => workoutPlans.id, { onDelete: "cascade" }),
-  dayOfWeek: integer("day_of_week").notNull(), // 1=Mon…7=Sun
-  name:      text("name"),
+export const weekSplits = pgTable("week_splits", {
+  id:          serial("id").primaryKey(),
+  weekPlanId:  integer("week_plan_id").notNull().references(() => userWeekPlans.id, { onDelete: "cascade" }),
+  splitId:     integer("split_id").notNull().references(() => splits.id),
+  frequency:   integer("frequency").notNull().default(1),
 });
 
-export const plannedExercises = pgTable("planned_exercises", {
-  id:               serial("id").primaryKey(),
-  plannedWorkoutId: integer("planned_workout_id").notNull().references(() => plannedWorkouts.id, { onDelete: "cascade" }),
-  exerciseId:       integer("exercise_id").notNull().references(() => exercises.id),
-  targetSets:       integer("target_sets").notNull().default(3),
-  targetReps:       integer("target_reps").notNull().default(12),
-  sortOrder:        integer("sort_order").notNull().default(0),
+export const weekGroups = pgTable("week_groups", {
+  id:           serial("id").primaryKey(),
+  weekSplitId:  integer("week_split_id").notNull().references(() => weekSplits.id, { onDelete: "cascade" }),
+  splitGroupId: integer("split_group_id").notNull().references(() => splitGroups.id),
+  name:         text("name").notNull(),
+  sortOrder:    integer("sort_order").notNull().default(0),
+});
+
+export const weekGroupExercises = pgTable("week_group_exercises", {
+  id:           serial("id").primaryKey(),
+  weekGroupId:  integer("week_group_id").notNull().references(() => weekGroups.id, { onDelete: "cascade" }),
+  exerciseId:   integer("exercise_id").notNull().references(() => exercises.id),
+  targetSets:   integer("target_sets").notNull().default(3),
+  targetReps:   integer("target_reps").notNull().default(12),
+  targetWeight: real("target_weight"),
+  sortOrder:    integer("sort_order").notNull().default(0),
+});
+
+export const dayWorkouts = pgTable("day_workouts", {
+  id:          serial("id").primaryKey(),
+  userId:      text("user_id").notNull(),
+  weekGroupId: integer("week_group_id").references(() => weekGroups.id),
+  date:        text("date").notNull(),
+  notes:       text("notes"),
+  completedAt: text("completed_at"),
+  createdAt:   text("created_at").notNull().default(sql`now()`),
+});
+
+export const daySets = pgTable("day_sets", {
+  id:                   serial("id").primaryKey(),
+  dayWorkoutId:         integer("day_workout_id").notNull().references(() => dayWorkouts.id, { onDelete: "cascade" }),
+  exerciseId:           integer("exercise_id").notNull().references(() => exercises.id),
+  weekGroupExerciseId:  integer("week_group_exercise_id").references(() => weekGroupExercises.id),
+  setNumber:            integer("set_number").notNull(),
+  targetWeight:         real("target_weight"),
+  targetReps:           integer("target_reps"),
+  actualWeight:         real("actual_weight"),
+  actualReps:           integer("actual_reps"),
+  completed:            boolean("completed").notNull().default(false),
 });
 
 // ─── Calendar Events ──────────────────────────────────────────────────────────
