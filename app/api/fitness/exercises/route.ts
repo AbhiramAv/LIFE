@@ -35,5 +35,5 @@ export async function GET(req: NextRequest) {
   if (q)        rows = rows.filter(e => e.name.toLowerCase().includes(q.toLowerCase()));
   if (category) rows = rows.filter(e => e.category === category);
 
-  return NextResponse.json(rows.slice(0, 40));
+  return NextResponse.json(rows);
 }
