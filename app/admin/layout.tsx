@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard, Target, Heart, Activity, Layers, MessageCircle,
-  LogOut, Settings, HelpCircle, Menu, Users,
+  LogOut, Settings, HelpCircle, Menu, Users, Zap, Megaphone,
 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -18,7 +18,9 @@ const NAV = [
   { href: "/admin/mood",    label: "Mood",      icon: Heart,           color: "#f43f5e" },
   { href: "/admin/fitness", label: "Fitness",  icon: Activity,        color: "#0ea5e9" },
   { href: "/admin/goals",   label: "Goals",    icon: Layers,          color: "#6366f1" },
-  { href: "/admin/help",    label: "Support",  icon: MessageCircle,   color: "#d946ef" },
+  { href: "/admin/activity",      label: "Activity",      icon: Zap,           color: "#06b6d4" },
+  { href: "/admin/announcements", label: "Announcements", icon: Megaphone,     color: "#f97316" },
+  { href: "/admin/help",          label: "Support",       icon: MessageCircle, color: "#d946ef" },
 ];
 
 function AdminUserSection({ collapsed }: { collapsed: boolean }) {

@@ -182,6 +182,17 @@ export const supportMessages = pgTable("support_messages", {
   createdAt: text("created_at").notNull().default(sql`now()`),
 });
 
+// ─── Announcements ────────────────────────────────────────────────────────────
+
+export const announcements = pgTable("announcements", {
+  id:         serial("id").primaryKey(),
+  content:    text("content").notNull(),
+  targetRole: text("target_role").notNull().default("all"), // all|user|dev|admin
+  active:     boolean("active").notNull().default(true),
+  createdAt:  text("created_at").notNull().default(sql`now()`),
+  createdBy:  text("created_by").notNull(),
+});
+
 // ─── Calendar Events ──────────────────────────────────────────────────────────
 
 export const calendarEvents = pgTable("calendar_events", {
