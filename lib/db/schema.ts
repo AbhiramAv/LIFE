@@ -7,6 +7,7 @@ export const exercises = pgTable("exercises", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   category: text("category").notNull(), // push|pull|legs|core|cardio|other
+  equipmentType: text("equipment_type").notNull().default("other"), // barbell|dumbbell|cable|machine|bodyweight|kettlebell|other
   muscleGroups: text("muscle_groups").notNull(),
   secondaryMuscles: text("secondary_muscles").notNull().default("[]"),
   isCustom: boolean("is_custom").notNull().default(false),
@@ -201,6 +202,7 @@ export const splits = pgTable("splits", {
   slug:        text("slug").notNull(),
   description: text("description"),
   isSystem:    boolean("is_system").notNull().default(true),
+  userId:      text("user_id"), // null = system split, set = user custom split
   createdAt:   text("created_at").notNull().default(sql`now()`),
 });
 
