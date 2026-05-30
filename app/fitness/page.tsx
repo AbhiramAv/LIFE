@@ -1979,26 +1979,32 @@ function ProgressTab() {
         <>
           {summary && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border bg-card p-3">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">PR</p>
-                <p className="text-xl font-bold tabular-nums mt-0.5">{conv(summary.pr)}<span className="text-xs font-normal text-muted-foreground ml-0.5">{u}</span></p>
-                {summary.prDate && <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(summary.prDate)}</p>}
-              </div>
-              <div className="rounded-xl border border-border bg-card p-3">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Sessions</p>
-                <p className="text-xl font-bold tabular-nums mt-0.5">{summary.totalSessions}</p>
-                {summary.lastTrained && <p className="text-[10px] text-muted-foreground mt-0.5">Last {fmtDate(summary.lastTrained)}</p>}
-              </div>
-              <div className="rounded-xl border border-border bg-card p-3 col-span-2">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">vs previous session</p>
-                {summary.delta !== null ? (
-                  <p className={`text-xl font-bold tabular-nums mt-0.5 ${summary.delta > 0 ? "text-emerald-400" : summary.delta < 0 ? "text-rose-400" : "text-muted-foreground"}`}>
-                    {summary.delta > 0 ? "+" : ""}{conv(summary.delta)}{u}
-                  </p>
-                ) : (
-                  <p className="text-xl font-bold text-muted-foreground mt-0.5">—</p>
-                )}
-              </div>
+              <Tip align="left" tip={<><p className="font-semibold mb-0.5">Personal Record</p><p className="text-muted-foreground">All-time best single-set weight for this exercise</p></>}>
+                <div className="rounded-xl border border-border bg-card p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">PR</p>
+                  <p className="text-xl font-bold tabular-nums mt-0.5">{conv(summary.pr)}<span className="text-xs font-normal text-muted-foreground ml-0.5">{u}</span></p>
+                  {summary.prDate && <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(summary.prDate)}</p>}
+                </div>
+              </Tip>
+              <Tip align="right" tip={<><p className="font-semibold mb-0.5">Sessions logged</p><p className="text-muted-foreground">Total times you've tracked this exercise across all time</p></>}>
+                <div className="rounded-xl border border-border bg-card p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Sessions</p>
+                  <p className="text-xl font-bold tabular-nums mt-0.5">{summary.totalSessions}</p>
+                  {summary.lastTrained && <p className="text-[10px] text-muted-foreground mt-0.5">Last {fmtDate(summary.lastTrained)}</p>}
+                </div>
+              </Tip>
+              <Tip align="left" className="col-span-2" tip={<><p className="font-semibold mb-0.5">Session delta</p><p className="text-muted-foreground">Weight change vs your previous session — positive means you lifted more last time</p></>}>
+                <div className="rounded-xl border border-border bg-card p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">vs previous session</p>
+                  {summary.delta !== null ? (
+                    <p className={`text-xl font-bold tabular-nums mt-0.5 ${summary.delta > 0 ? "text-emerald-400" : summary.delta < 0 ? "text-rose-400" : "text-muted-foreground"}`}>
+                      {summary.delta > 0 ? "+" : ""}{conv(summary.delta)}{u}
+                    </p>
+                  ) : (
+                    <p className="text-xl font-bold text-muted-foreground mt-0.5">—</p>
+                  )}
+                </div>
+              </Tip>
             </div>
           )}
 
@@ -2009,8 +2015,18 @@ function ProgressTab() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" tick={{ fontSize:10, fill:"var(--muted-foreground)" }} />
                   <YAxis tick={{ fontSize:10, fill:"var(--muted-foreground)" }} unit={u} />
-                  <Tooltip contentStyle={{ backgroundColor:"var(--card)", border:"1px solid var(--border)", borderRadius:8, fontSize:12 }}
-                    formatter={(v: unknown) => [`${v}${u}`, ""]} />
+                  <Tooltip content={({ active, payload, label }: { active?: boolean; payload?: readonly { dataKey?: unknown; value?: unknown }[]; label?: string | number }) => {
+                    if (!active || !payload?.length) return null;
+                    const wt = payload.find(p => p.dataKey === "weight");
+                    const rm = payload.find(p => p.dataKey === "e1RM");
+                    return (
+                      <div className="rounded-xl bg-card border border-border shadow-xl px-3 py-2.5 text-xs space-y-1">
+                        <p className="font-bold text-foreground">{label}</p>
+                        {wt && <p className="text-muted-foreground">Max weight <span className="font-semibold text-foreground tabular-nums">{String(wt.value)}{u}</span></p>}
+                        {rm && <p className="text-muted-foreground">Est. 1RM <span className="font-semibold text-foreground tabular-nums">{String(rm.value)}{u}</span></p>}
+                      </div>
+                    );
+                  }} />
                   <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={2} dot={{ fill:"#10b981", r:3 }} name="Max weight" />
                   <Line type="monotone" dataKey="e1RM" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" dot={false} name="Est. 1RM" />
                 </LineChart>
@@ -2081,6 +2097,27 @@ const SESSION_TYPE_COLOR: Record<string, string> = {
   Push: "#10b981", Pull: "#0ea5e9", Lower: "#8b5cf6",
   Upper: "#06b6d4", "Full Body": "#f59e0b", Accessory: "#6b7280", Other: "#6b7280",
 };
+
+function Tip({ tip, children, align = "center", className, style }: {
+  tip: React.ReactNode;
+  children: React.ReactNode;
+  align?: "center" | "left" | "right";
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div className={`group/tip relative ${className ?? ""}`} style={style}>
+      {children}
+      <div className={`pointer-events-none absolute bottom-[calc(100%+6px)] z-50 opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150 delay-100 min-w-max max-w-[210px] ${
+        align === "left" ? "left-0" : align === "right" ? "right-0" : "left-1/2 -translate-x-1/2"
+      }`}>
+        <div className="rounded-xl bg-card border border-border shadow-xl px-3 py-2.5 text-xs text-foreground space-y-0.5">
+          {tip}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscles") => void }) {
   const [viewMode, setViewMode]         = useState<"monthly" | "rolling">("monthly");
@@ -2354,32 +2391,38 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
 
               {/* Summary cards */}
               <div className="grid grid-cols-3 gap-2">
-                <button onClick={() => { setShowExList(v => !v); }}
-                  className="rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-muted/50 transition-colors">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Exercises</p>
-                  <p className="text-lg font-bold tabular-nums leading-none">{exercises.length}</p>
-                  <p className="text-[10px] text-primary mt-0.5">{showExList ? "hide list" : "see all →"}</p>
-                </button>
-                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Volume Δ</p>
-                  {volumeDelta !== null
-                    ? <>
-                        <p className="text-lg font-bold tabular-nums leading-none"
-                          style={{ color: volumeDelta > 0 ? "#10b981" : volumeDelta < 0 ? "#f43f5e" : "#6b7280" }}>
-                          {volumeDelta > 0 ? "+" : ""}{volumeDelta}%
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">vs prev {days}d</p>
-                      </>
-                    : <p className="text-sm text-muted-foreground mt-1">No prior data</p>
-                  }
-                </div>
-                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Active Days</p>
-                  <p className="text-lg font-bold tabular-nums leading-none">{sessions.length}
-                    <span className="text-sm font-normal text-muted-foreground">/{days}</span>
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{(sessions.length / weeksInWin).toFixed(1)}× per week</p>
-                </div>
+                <Tip align="left" tip={<><p className="font-semibold mb-0.5">Unique exercises</p><p className="text-muted-foreground">Distinct movements completed this window. Tap to expand.</p></>}>
+                  <button onClick={() => { setShowExList(v => !v); }}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-muted/50 transition-colors">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Exercises</p>
+                    <p className="text-lg font-bold tabular-nums leading-none">{exercises.length}</p>
+                    <p className="text-[10px] text-primary mt-0.5">{showExList ? "hide list" : "see all →"}</p>
+                  </button>
+                </Tip>
+                <Tip tip={<><p className="font-semibold mb-0.5">Volume delta</p><p className="text-muted-foreground">Total sets this window vs the prior {days}d window — shows training load trend</p></>}>
+                  <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Volume Δ</p>
+                    {volumeDelta !== null
+                      ? <>
+                          <p className="text-lg font-bold tabular-nums leading-none"
+                            style={{ color: volumeDelta > 0 ? "#10b981" : volumeDelta < 0 ? "#f43f5e" : "#6b7280" }}>
+                            {volumeDelta > 0 ? "+" : ""}{volumeDelta}%
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">vs prev {days}d</p>
+                        </>
+                      : <p className="text-sm text-muted-foreground mt-1">No prior data</p>
+                    }
+                  </div>
+                </Tip>
+                <Tip align="right" tip={<><p className="font-semibold mb-0.5">Training frequency</p><p className="text-muted-foreground">Days with logged workouts / {days}. Rate shows weekly average.</p></>}>
+                  <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Active Days</p>
+                    <p className="text-lg font-bold tabular-nums leading-none">{sessions.length}
+                      <span className="text-sm font-normal text-muted-foreground">/{days}</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{(sessions.length / weeksInWin).toFixed(1)}× per week</p>
+                  </div>
+                </Tip>
               </div>
 
               {/* Exercise list */}
@@ -2427,12 +2470,22 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                                 const cell = week[dayIdx];
                                 if (!cell || !cell.inWindow) return <div key={wi} className="w-4 h-4 rounded-sm opacity-0" />;
                                 const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
+                                const cellDate = new Date(cell.iso + "T00:00:00");
+                                const cellDayName = cellDate.toLocaleDateString("en-US", { weekday: "short" });
+                                const cellDateLabel = cellDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                                 return (
-                                  <div key={wi} className="w-4 h-4 rounded-sm transition-colors"
-                                    style={color
-                                      ? { backgroundColor: color + "bb" }
-                                      : { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-                                    title={cell.iso + (cell.cat ? ` · ${cell.cat}` : "")} />
+                                  <Tip key={wi} className="w-4 h-4"
+                                    tip={<>
+                                      <p className="font-semibold">{cellDayName}, {cellDateLabel}</p>
+                                      {cell.trained && cell.cat
+                                        ? <p className="font-medium" style={{ color: SESSION_TYPE_COLOR[cell.cat] }}>{cell.cat}</p>
+                                        : <p className="text-muted-foreground">Rest day</p>}
+                                    </>}>
+                                    <div className="w-full h-full rounded-sm transition-colors"
+                                      style={color
+                                        ? { backgroundColor: color + "bb" }
+                                        : { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }} />
+                                  </Tip>
                                 );
                               })}
                             </div>
@@ -2449,10 +2502,12 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-1">
                             {typeSorted.map(({ type, count }) => (
-                              <div key={type} className="flex items-center gap-1.5">
-                                <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
-                                <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
-                              </div>
+                              <Tip key={type} tip={<><p className="font-semibold">{type}</p><p className="text-muted-foreground">{count} session{count !== 1 ? "s" : ""} · {Math.round(count / sessions.length * 100)}% of total</p></>}>
+                                <div className="flex items-center gap-1.5 cursor-default">
+                                  <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                  <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                                </div>
+                              </Tip>
                             ))}
                           </div>
                         </>
@@ -2466,21 +2521,32 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">By Month</p>
                       <div className="grid grid-cols-2 gap-2">
                         {monthCards.map(mc => (
-                          <div key={mc.key} className="rounded-xl border border-border bg-card p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold text-muted-foreground">{mc.label}</p>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                                style={{ color: mc.color, backgroundColor: mc.color + "20" }}>{mc.dominant}</span>
-                            </div>
-                            <p className="text-2xl font-black tabular-nums leading-none">{mc.count}
-                              <span className="text-xs font-normal text-muted-foreground ml-1">sessions</span>
-                            </p>
-                            <div className="h-1.5 rounded-full overflow-hidden flex gap-px">
+                          <Tip key={mc.key}
+                            tip={<>
+                              <p className="font-semibold mb-1">{mc.label}</p>
                               {mc.strip.map(({ type, n }) => (
-                                <div key={type} className="h-full" style={{ flex: n, backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                <p key={type} className="text-muted-foreground">
+                                  <span className="font-bold" style={{ color: SESSION_TYPE_COLOR[type] }}>■</span>{" "}
+                                  {type} <span className="font-medium text-foreground">{n}</span>
+                                </p>
                               ))}
+                            </>}>
+                            <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-muted-foreground">{mc.label}</p>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                  style={{ color: mc.color, backgroundColor: mc.color + "20" }}>{mc.dominant}</span>
+                              </div>
+                              <p className="text-2xl font-black tabular-nums leading-none">{mc.count}
+                                <span className="text-xs font-normal text-muted-foreground ml-1">sessions</span>
+                              </p>
+                              <div className="h-1.5 rounded-full overflow-hidden flex gap-px">
+                                {mc.strip.map(({ type, n }) => (
+                                  <div key={type} className="h-full" style={{ flex: n, backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                ))}
+                              </div>
                             </div>
-                          </div>
+                          </Tip>
                         ))}
                       </div>
                     </div>
@@ -2510,22 +2576,32 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                               const dayNum = parseInt(cell.iso.slice(8));
                               if (!cell.inWindow) return <div key={cell.iso} className="flex-1 h-8" />;
                               const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
+                              const cellD = new Date(cell.iso + "T00:00:00");
+                              const cellDN = cellD.toLocaleDateString("en-US", { weekday: "short" });
+                              const tipContent = (
+                                <>
+                                  <p className="font-semibold">{cellDN} {dayNum}</p>
+                                  {cell.trained && cell.cat
+                                    ? <p className="font-medium" style={{ color: color ?? undefined }}>{cell.cat}</p>
+                                    : <p className="text-muted-foreground">Rest day</p>}
+                                </>
+                              );
                               if (color) {
                                 return (
-                                  <div key={cell.iso}
-                                    className="flex-1 h-8 rounded-lg flex items-center justify-center"
-                                    style={{ backgroundColor: color + "25", border: `2px solid ${color}` }}
-                                    title={`${cell.iso} · ${cell.cat}`}>
-                                    <span className="text-xs font-bold tabular-nums leading-none" style={{ color }}>{dayNum}</span>
-                                  </div>
+                                  <Tip key={cell.iso} className="flex-1" tip={tipContent}>
+                                    <div className="h-8 rounded-lg flex items-center justify-center"
+                                      style={{ backgroundColor: color + "25", border: `2px solid ${color}` }}>
+                                      <span className="text-xs font-bold tabular-nums leading-none" style={{ color }}>{dayNum}</span>
+                                    </div>
+                                  </Tip>
                                 );
                               }
                               return (
-                                <div key={cell.iso}
-                                  className="flex-1 h-8 rounded-lg flex items-center justify-center border border-border/30"
-                                  title={cell.iso}>
-                                  <span className="text-[10px] font-medium tabular-nums leading-none text-muted-foreground/40">{dayNum}</span>
-                                </div>
+                                <Tip key={cell.iso} className="flex-1" tip={tipContent}>
+                                  <div className="h-8 rounded-lg flex items-center justify-center border border-border/30">
+                                    <span className="text-[10px] font-medium tabular-nums leading-none text-muted-foreground/40">{dayNum}</span>
+                                  </div>
+                                </Tip>
                               );
                             })}
                             {week.length < 7 && Array.from({ length: 7 - week.length }, (_, i) => (
@@ -2545,10 +2621,12 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                           </div>
                           <div className="flex flex-wrap gap-x-3 gap-y-1">
                             {typeSorted.map(({ type, count }) => (
-                              <div key={type} className="flex items-center gap-1.5">
-                                <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
-                                <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
-                              </div>
+                              <Tip key={type} tip={<><p className="font-semibold">{type}</p><p className="text-muted-foreground">{count} session{count !== 1 ? "s" : ""} · {Math.round(count / sessions.length * 100)}% of total</p></>}>
+                                <div className="flex items-center gap-1.5 cursor-default">
+                                  <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                  <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                                </div>
+                              </Tip>
                             ))}
                           </div>
                         </>
@@ -2582,7 +2660,7 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
               <div className="space-y-2">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Movement Breakdown</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {groups.map(g => {
+                  {groups.map((g, gi) => {
                     const color     = CAT_COLOR[g.category] ?? "#6b7280";
                     const da        = daysAgoOf(g.lastTrained);
                     const freshHex  = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
@@ -2590,29 +2668,41 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                     const barPct    = (g.sets / maxSets) * 100;
                     const targetPct = (target / maxSets) * 100;
                     const freqLabel = weeksInWin <= 1 ? `${g.sessions}×` : `${(g.sessions / weeksInWin).toFixed(1)}×/wk`;
+                    const prevSets  = prevMap[g.category] ?? 0;
+                    const trendPct  = prevSets > 0 ? Math.round((g.sets - prevSets) / prevSets * 100) : null;
 
                     return (
-                      <div key={g.category} className="rounded-xl border border-border bg-card p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                            <span className="text-sm font-semibold">{CAT_LABEL[g.category] ?? g.category}</span>
-                            {trend && <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>}
+                      <Tip key={g.category} align={gi % 2 === 0 ? "left" : "right"}
+                        tip={<>
+                          <p className="font-semibold mb-1">{CAT_LABEL[g.category] ?? g.category}</p>
+                          <p className="text-muted-foreground">Last trained <span className="text-foreground font-medium">{daysSince(g.lastTrained)}</span></p>
+                          {trendPct !== null && (
+                            <p className="text-muted-foreground">vs prev <span className="font-medium" style={{ color: trendPct > 0 ? "#10b981" : trendPct < 0 ? "#f43f5e" : "#6b7280" }}>{trendPct > 0 ? "+" : ""}{trendPct}%</span></p>
+                          )}
+                          <p className="text-muted-foreground">Target <span className="text-foreground font-medium">{target} sets / {days}d</span></p>
+                        </>}>
+                        <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                              <span className="text-sm font-semibold">{CAT_LABEL[g.category] ?? g.category}</span>
+                              {trend && <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>}
+                            </div>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                              style={{ color: freshHex, backgroundColor: freshHex + "18" }}>{daysSince(g.lastTrained)}</span>
                           </div>
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                            style={{ color: freshHex, backgroundColor: freshHex + "18" }}>{daysSince(g.lastTrained)}</span>
+                          <div className="relative h-1.5 rounded-full bg-muted">
+                            <div className="h-full rounded-full transition-[width] duration-500 overflow-hidden absolute inset-0"
+                              style={{ width: `${barPct}%`, backgroundColor: color }} />
+                            <div className="absolute top-0 h-full w-px bg-foreground/40 z-10"
+                              style={{ left: `${targetPct}%` }} />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-muted-foreground tabular-nums">{g.sets} sets</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">{freqLabel}</span>
+                          </div>
                         </div>
-                        <div className="relative h-1.5 rounded-full bg-muted">
-                          <div className="h-full rounded-full transition-[width] duration-500 overflow-hidden absolute inset-0"
-                            style={{ width: `${barPct}%`, backgroundColor: color }} />
-                          <div className="absolute top-0 h-full w-px bg-foreground/40 z-10"
-                            style={{ left: `${targetPct}%` }} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground tabular-nums">{g.sets} sets</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">{freqLabel}</span>
-                        </div>
-                      </div>
+                      </Tip>
                     );
                   })}
                 </div>
