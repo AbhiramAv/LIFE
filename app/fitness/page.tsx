@@ -2221,6 +2221,42 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
     .map(week => ({ start: week[0].iso, count: week.filter(c => c.inWindow && c.trained).length, inWindow: week.some(c => c.inWindow) }))
     .filter(w => w.inWindow && w.count <= 1);
 
+  // Range mode: month label per week column (show label on first week of each new month)
+  const weekMonthLabels = calWeeks.map((week, wi) => {
+    const firstIn = week.find(c => c.inWindow);
+    if (!firstIn) return null;
+    const m = firstIn.iso.slice(0, 7);
+    if (wi === 0) return new Date(firstIn.iso + "T00:00:00").toLocaleDateString("en-US", { month: "short" });
+    const prevFirst = calWeeks[wi - 1].find(c => c.inWindow);
+    return (!prevFirst || prevFirst.iso.slice(0, 7) !== m)
+      ? new Date(firstIn.iso + "T00:00:00").toLocaleDateString("en-US", { month: "short" })
+      : null;
+  });
+
+  // Range mode: per-month summary cards
+  const monthCardMap: Record<string, { count: number; tc: Record<string, number> }> = {};
+  for (const s of sessions) {
+    const m = s.date.slice(0, 7);
+    if (!monthCardMap[m]) monthCardMap[m] = { count: 0, tc: {} };
+    monthCardMap[m].count++;
+    const t = classifySession(s.categories);
+    monthCardMap[m].tc[t] = (monthCardMap[m].tc[t] ?? 0) + 1;
+  }
+  const monthCards = Object.entries(monthCardMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, { count, tc }]) => {
+      const dominant = Object.entries(tc).sort(([, a], [, b]) => b - a)[0]?.[0] ?? "Other";
+      const d = new Date(key + "-01T00:00:00");
+      return {
+        key,
+        label: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+        count,
+        dominant,
+        color: SESSION_TYPE_COLOR[dominant] ?? "#6b7280",
+        strip: typeOrder.filter(t => tc[t]).map(t => ({ type: t, n: tc[t] })),
+      };
+    });
+
   return (
     <div className="space-y-5">
       <div className="space-y-3">
@@ -2361,92 +2397,185 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                 </div>
               )}
 
-              {/* Training calendar + split tendency */}
-              {calWeeks.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Training Calendar</p>
-                    {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex gap-1">
-                      {["M","T","W","T","F","S","S"].map((d, i) => (
-                        <div key={i} className="flex-1 text-center text-[9px] font-bold text-muted-foreground/40 pb-0.5">{d}</div>
-                      ))}
-                    </div>
-                    {calWeeks.map((week, wi) => (
-                      <div key={wi} className="flex gap-1">
-                        {week.map(cell => {
-                          const dayNum = parseInt(cell.iso.slice(8));
-                          if (!cell.inWindow) {
-                            return <div key={cell.iso} className="flex-1 h-8" />;
-                          }
-                          const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
-                          if (color) {
-                            return (
-                              <div key={cell.iso}
-                                className="flex-1 h-8 rounded-lg flex items-center justify-center"
-                                style={{ backgroundColor: color + "25", border: `2px solid ${color}` }}
-                                title={`${cell.iso} · ${cell.cat}`}>
-                                <span className="text-xs font-bold tabular-nums leading-none" style={{ color }}>{dayNum}</span>
+              {viewMode === "rolling" ? (
+
+                /* ── Range mode ── */
+                <div className="space-y-4">
+
+                  {/* Transposed heatmap — rows = days of week, cols = weeks */}
+                  {calWeeks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Activity</p>
+                        {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
+                      </div>
+                      <div className="overflow-x-auto rounded-xl border border-border bg-card/50 p-3">
+                        <div className="w-max space-y-0.5">
+                          {/* Month label row above columns */}
+                          <div className="flex gap-0.5 mb-1.5 ml-5">
+                            {calWeeks.map((_, wi) => (
+                              <div key={wi} className="w-4 text-[7px] font-bold text-muted-foreground/50 text-center leading-none">
+                                {weekMonthLabels[wi] ?? ""}
                               </div>
-                            );
-                          }
-                          return (
-                            <div key={cell.iso}
-                              className="flex-1 h-8 rounded-lg flex items-center justify-center border border-border/30"
-                              title={cell.iso}>
-                              <span className="text-[10px] font-medium tabular-nums leading-none text-muted-foreground/40">{dayNum}</span>
+                            ))}
+                          </div>
+                          {/* 7 day rows (Mon → Sun) */}
+                          {["M","T","W","T","F","S","S"].map((dayLabel, dayIdx) => (
+                            <div key={dayIdx} className="flex items-center gap-0.5">
+                              <span className="text-[8px] font-bold text-muted-foreground/40 w-5 shrink-0 text-right pr-1 leading-none">{dayLabel}</span>
+                              {calWeeks.map((week, wi) => {
+                                const cell = week[dayIdx];
+                                if (!cell || !cell.inWindow) return <div key={wi} className="w-4 h-4 rounded-sm opacity-0" />;
+                                const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
+                                return (
+                                  <div key={wi} className="w-4 h-4 rounded-sm transition-colors"
+                                    style={color
+                                      ? { backgroundColor: color + "bb" }
+                                      : { backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                                    title={cell.iso + (cell.cat ? ` · ${cell.cat}` : "")} />
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                        {week.length < 7 && Array.from({ length: 7 - week.length }, (_, i) => (
-                          <div key={"empty-"+i} className="flex-1" />
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                  {typeSorted.length > 0 && (
-                    <>
-                      <div className="h-3 rounded-full overflow-hidden flex gap-px">
-                        {typeSorted.map(({ type, count }) => (
-                          <div key={type} className="h-full"
-                            style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }}
-                            title={`${type}: ${count}`} />
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-1">
-                        {typeSorted.map(({ type, count }) => (
-                          <div key={type} className="flex items-center gap-1.5">
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
-                            <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                      {/* Stacked split bar + legend */}
+                      {typeSorted.length > 0 && (
+                        <>
+                          <div className="h-3 rounded-full overflow-hidden flex gap-px">
+                            {typeSorted.map(({ type, count }) => (
+                              <div key={type} className="h-full" style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }} title={`${type}: ${count}`} />
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            {typeSorted.map(({ type, count }) => (
+                              <div key={type} className="flex items-center gap-1.5">
+                                <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Month mini-cards */}
+                  {monthCards.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">By Month</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {monthCards.map(mc => (
+                          <div key={mc.key} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-muted-foreground">{mc.label}</p>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                                style={{ color: mc.color, backgroundColor: mc.color + "20" }}>{mc.dominant}</span>
+                            </div>
+                            <p className="text-2xl font-black tabular-nums leading-none">{mc.count}
+                              <span className="text-xs font-normal text-muted-foreground ml-1">sessions</span>
+                            </p>
+                            <div className="h-1.5 rounded-full overflow-hidden flex gap-px">
+                              {mc.strip.map(({ type, n }) => (
+                                <div key={type} className="h-full" style={{ flex: n, backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                              ))}
+                            </div>
                           </div>
                         ))}
                       </div>
-                    </>
+                    </div>
                   )}
-                </div>
-              )}
 
-              {/* Light / missed weeks */}
-              {lightWeeks.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Light Weeks</p>
-                  <div className="space-y-1.5">
-                    {lightWeeks.map(w => {
-                      const d = new Date(w.start + "T00:00:00");
-                      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                      return (
-                        <div key={w.start} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                          <span className="text-xs font-medium">Week of {label}</span>
-                          <span className={`text-xs font-semibold ${w.count === 0 ? "text-rose-500" : "text-amber-500"}`}>
-                            {w.count === 0 ? "Missed" : `${w.count} session`}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
+
+              ) : (
+
+                /* ── Monthly mode: calendar + light weeks ── */
+                <>
+                  {calWeeks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Training Calendar</p>
+                        {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex gap-1">
+                          {["M","T","W","T","F","S","S"].map((d, i) => (
+                            <div key={i} className="flex-1 text-center text-[9px] font-bold text-muted-foreground/40 pb-0.5">{d}</div>
+                          ))}
+                        </div>
+                        {calWeeks.map((week, wi) => (
+                          <div key={wi} className="flex gap-1">
+                            {week.map(cell => {
+                              const dayNum = parseInt(cell.iso.slice(8));
+                              if (!cell.inWindow) return <div key={cell.iso} className="flex-1 h-8" />;
+                              const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
+                              if (color) {
+                                return (
+                                  <div key={cell.iso}
+                                    className="flex-1 h-8 rounded-lg flex items-center justify-center"
+                                    style={{ backgroundColor: color + "25", border: `2px solid ${color}` }}
+                                    title={`${cell.iso} · ${cell.cat}`}>
+                                    <span className="text-xs font-bold tabular-nums leading-none" style={{ color }}>{dayNum}</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div key={cell.iso}
+                                  className="flex-1 h-8 rounded-lg flex items-center justify-center border border-border/30"
+                                  title={cell.iso}>
+                                  <span className="text-[10px] font-medium tabular-nums leading-none text-muted-foreground/40">{dayNum}</span>
+                                </div>
+                              );
+                            })}
+                            {week.length < 7 && Array.from({ length: 7 - week.length }, (_, i) => (
+                              <div key={"empty-"+i} className="flex-1" />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                      {typeSorted.length > 0 && (
+                        <>
+                          <div className="h-3 rounded-full overflow-hidden flex gap-px">
+                            {typeSorted.map(({ type, count }) => (
+                              <div key={type} className="h-full"
+                                style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }}
+                                title={`${type}: ${count}`} />
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            {typeSorted.map(({ type, count }) => (
+                              <div key={type} className="flex items-center gap-1.5">
+                                <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                                <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {lightWeeks.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Light Weeks</p>
+                      <div className="space-y-1.5">
+                        {lightWeeks.map(w => {
+                          const d = new Date(w.start + "T00:00:00");
+                          const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                          return (
+                            <div key={w.start} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                              <span className="text-xs font-medium">Week of {label}</span>
+                              <span className={`text-xs font-semibold ${w.count === 0 ? "text-rose-500" : "text-amber-500"}`}>
+                                {w.count === 0 ? "Missed" : `${w.count} session`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+
               )}
 
               {/* Movement breakdown */}
