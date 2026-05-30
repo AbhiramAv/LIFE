@@ -49,6 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           sortOrder: splitGroupDefaults.sortOrder,
           exerciseName: exercises.name,
           category: exercises.category,
+          equipmentType: exercises.equipmentType,
         })
           .from(splitGroupDefaults)
           .innerJoin(exercises, eq(splitGroupDefaults.exerciseId, exercises.id))
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               sortOrder: d.sortOrder,
             }).returning();
 
-            return { ...wge, exerciseName: d.exerciseName, category: d.category, lastWeight };
+            return { ...wge, exerciseName: d.exerciseName, category: d.category, equipmentType: d.equipmentType, lastWeight };
           })
         );
       }

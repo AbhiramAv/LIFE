@@ -789,7 +789,7 @@ function SplitPicker({ splits, onSelect, onCreateSplit, onEditSplit, onDeleteSpl
         ))}
 
         <button onClick={onCreateSplit}
-          className="rounded-xl border border-dashed border-border bg-card p-4 text-left hover:border-violet-400/50 hover:bg-violet-500/5 transition-all group">
+          className="rounded-xl border border-dashed border-border bg-card p-4 text-left hover:border-violet-400/50 hover:bg-violet-500/5 transition-colors group">
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 shrink-0 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-600/20 flex items-center justify-center">
               <Plus className="h-5 w-5 text-violet-500" />
@@ -856,16 +856,19 @@ function CustomSplitCreator({ allExercises, onCreated, onBack, initialSplit }: {
     if (!splitName.trim()) { setError("Split name is required."); return; }
     if (groups.some(g => !g.name.trim())) { setError("All groups need a name."); return; }
     setSaving(true); setError("");
-    const body = {
-      name: splitName.trim(),
-      groups: groups.map(g => ({ name: g.name.trim(), exerciseIds: g.exercises.map(e => e.id) })),
-    };
-    const url = isEditing ? `/api/fitness/splits/${initialSplit!.id}` : "/api/fitness/splits";
-    const res = await fetch(url, { method: isEditing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) { setError("Failed to save split."); setSaving(false); return; }
-    const saved: SplitMeta = await res.json();
-    onCreated(saved);
-    setSaving(false);
+    try {
+      const body = {
+        name: splitName.trim(),
+        groups: groups.map(g => ({ name: g.name.trim(), exerciseIds: g.exercises.map(e => e.id) })),
+      };
+      const url = isEditing ? `/api/fitness/splits/${initialSplit!.id}` : "/api/fitness/splits";
+      const res = await fetch(url, { method: isEditing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) { setError("Failed to save split."); return; }
+      const saved: SplitMeta = await res.json();
+      onCreated(saved);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -966,7 +969,7 @@ function FrequencyPicker({ split, onSelect, onBack }: {
       <div className="space-y-2">
         {options.map(o => (
           <button key={o.value} onClick={() => setSelected(o.value)}
-            className={`w-full rounded-xl border p-4 text-left transition-all ${selected === o.value ? "border-primary bg-primary/5" : "border-border hover:border-border/80 hover:bg-muted/20"}`}>
+            className={`w-full rounded-xl border p-4 text-left transition-colors ${selected === o.value ? "border-primary bg-primary/5" : "border-border hover:border-border/80 hover:bg-muted/20"}`}>
             <div className="flex items-center gap-3">
               <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${selected === o.value ? "border-primary" : "border-muted-foreground"}`}>
                 {selected === o.value && <div className="h-2 w-2 rounded-full bg-primary" />}
@@ -1061,17 +1064,20 @@ function ExerciseConfigurator({ groups, allExercises, loading, pendingMode, onBa
 
   async function handleSave() {
     setSaving(true);
-    if (!pendingMode) {
-      for (const g of localGroups) {
-        for (const ex of g.exercises) {
-          await patchExercise(ex.id, "targetSets",   ex.targetSets);
-          await patchExercise(ex.id, "targetReps",   ex.targetReps);
-          await patchExercise(ex.id, "targetWeight", ex.targetWeight ?? 0);
-        }
+    try {
+      if (!pendingMode) {
+        await Promise.all(localGroups.flatMap(g =>
+          g.exercises.flatMap(ex => [
+            patchExercise(ex.id, "targetSets",   ex.targetSets),
+            patchExercise(ex.id, "targetReps",   ex.targetReps),
+            patchExercise(ex.id, "targetWeight", ex.targetWeight ?? 0),
+          ])
+        ));
       }
+      await onSave(localGroups);
+    } finally {
+      setSaving(false);
     }
-    await onSave(localGroups);
-    setSaving(false);
   }
 
   if (loading) {
@@ -1098,7 +1104,7 @@ function ExerciseConfigurator({ groups, allExercises, loading, pendingMode, onBa
       <div className="flex gap-1 p-1 rounded-xl border border-border bg-muted/30 overflow-x-auto">
         {localGroups.map((g, i) => (
           <button key={g.id} onClick={() => { setActiveGroupIdx(i); setShowPicker(false); }}
-            className={`flex-1 min-w-fit px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+            className={`flex-1 min-w-fit px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
               i === activeGroupIdx ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}>
             {g.name}
@@ -1266,7 +1272,7 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
         <div className="space-y-2">
           {availableGroups.map(g => (
             <button key={g.id} onClick={() => setSelectedGroup(g)}
-              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-all group">
+              className="w-full rounded-xl border border-border bg-card p-4 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors group">
               <div className="flex items-center gap-4">
                 <div className="h-20 w-10 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                   <MuscleGroupSVG name={g.name} />
@@ -1370,7 +1376,7 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
 
                     {/* Done checkbox */}
                     <button onClick={() => toggleSet(idx)}
-                      className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${
+                      className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
                         s.completed
                           ? "border-emerald-500 bg-emerald-500 text-white"
                           : "border-border hover:border-emerald-400"
@@ -1547,10 +1553,13 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
 
   const loadPlan = useCallback(async (ws: string) => {
     setLoadingPlan(true);
-    const res = await fetch(`/api/fitness/week-plan?weekStart=${ws}`);
-    const data = await res.json();
-    setPlan(data ?? null);
-    setLoadingPlan(false);
+    try {
+      const res = await fetch(`/api/fitness/week-plan?weekStart=${ws}`);
+      const data = await res.json();
+      setPlan(data ?? null);
+    } finally {
+      setLoadingPlan(false);
+    }
   }, []);
 
   useEffect(() => { loadPlan(weekStart); }, [weekStart, loadPlan]);
@@ -1625,10 +1634,9 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
         }],
       }),
     });
-    if (res.ok) {
-      const created: WeekPlan = await res.json();
-      setPlan(created);
-    }
+    if (!res.ok) throw new Error("Failed to save plan");
+    const created: WeekPlan = await res.json();
+    setPlan(created);
   }
 
   async function handleSplitSelected(split: SplitMeta, frequency: number) {
@@ -2042,7 +2050,7 @@ export default function FitnessPage() {
       <div className="flex rounded-xl border border-border bg-muted/30 p-1 gap-1">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-colors ${
               tab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}>
             <Icon className="h-3.5 w-3.5" />{label}
