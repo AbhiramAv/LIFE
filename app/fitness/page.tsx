@@ -1225,6 +1225,19 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
     setSets(prev => prev.map((s, i) => i === idx ? { ...s, completed: !s.completed } : s));
   }
 
+  function setExWeight(wgeId: number, val: string) {
+    setSets(prev => prev.map(s => s.weekGroupExerciseId === wgeId ? { ...s, actualWeight: val } : s));
+  }
+  function setExReps(wgeId: number, val: string) {
+    setSets(prev => prev.map(s => s.weekGroupExerciseId === wgeId ? { ...s, actualReps: val } : s));
+  }
+  function completeEx(wgeId: number, done: boolean) {
+    setSets(prev => prev.map(s => s.weekGroupExerciseId === wgeId ? { ...s, completed: done } : s));
+  }
+  function completeAll() {
+    setSets(prev => prev.map(s => ({ ...s, completed: true })));
+  }
+
   async function save() {
     const completedSets = sets.filter(s => s.completed);
     if (completedSets.length === 0) { setSaveError("Complete at least one set."); return; }
@@ -1312,6 +1325,8 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
   const completedCount = sets.filter(s => s.completed).length;
   const totalCount     = sets.length;
 
+  const allComplete = completedCount === totalCount && totalCount > 0;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -1323,75 +1338,82 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
           <h2 className="text-base font-bold">{selectedGroup.name} · {fmtDate(date)}</h2>
           <p className="text-xs text-muted-foreground">{completedCount}/{totalCount} sets completed</p>
         </div>
+        <button
+          onClick={completeAll}
+          disabled={allComplete}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+            allComplete
+              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+              : "bg-muted text-muted-foreground border-border hover:text-emerald-400 hover:border-emerald-400/50"
+          }`}
+        >
+          <Check className="h-3 w-3" />
+          {allComplete ? "All done!" : "Done All"}
+        </button>
       </div>
 
       {/* Exercise cards */}
       {Array.from(exerciseMap.values()).map(({ ex, sets: exSets }) => {
         const allDone = exSets.every(s => s.draft.completed);
+        const firstDraft = exSets[0]?.draft;
         return (
           <div key={ex.id} className={`rounded-xl border bg-card overflow-hidden transition-colors ${allDone ? "border-emerald-500/40" : "border-border"}`}>
+            {/* Exercise header */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-              <EquipmentIcon type={ex.equipmentType} size={36} />
+              <EquipmentIcon type={ex.equipmentType} size={32} />
               <span className="font-semibold text-sm flex-1">{ex.exerciseName}</span>
-              <CategoryBadge cat={ex.category} />
               {ex.lastWeight !== null && (
-                <span className="text-[11px] text-muted-foreground">Last: {ex.lastWeight}kg</span>
+                <span className="text-[11px] text-muted-foreground shrink-0">Last: {ex.lastWeight}kg</span>
               )}
               {allDone && <Check className="h-4 w-4 text-emerald-400 shrink-0" />}
             </div>
 
-            {/* Set rows */}
-            <div className="divide-y divide-border/50">
+            {/* Weight · Reps · Complete-all row */}
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/20">
+              <input
+                type="number"
+                value={firstDraft?.actualWeight ?? ""}
+                onChange={e => setExWeight(ex.id, e.target.value)}
+                placeholder={ex.targetWeight ? String(ex.targetWeight) : "kg"}
+                className="w-20 h-8 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <span className="text-xs text-muted-foreground">kg ×</span>
+              <input
+                type="number"
+                value={firstDraft?.actualReps ?? ""}
+                onChange={e => setExReps(ex.id, e.target.value)}
+                placeholder={String(ex.targetReps ?? 10)}
+                className="w-14 h-8 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <span className="text-xs text-muted-foreground">reps</span>
+              <div className="flex-1" />
+              <button
+                onClick={() => completeEx(ex.id, !allDone)}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  allDone
+                    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                    : "bg-background text-muted-foreground border-border hover:text-emerald-400 hover:border-emerald-400/50"
+                }`}
+              >
+                <Check className="h-3 w-3" />
+                {allDone ? "Done" : `All ${exSets.length} sets`}
+              </button>
+            </div>
+
+            {/* Set tap targets */}
+            <div className="flex flex-wrap gap-2.5 px-4 py-3">
               {exSets.map(({ draft: s, idx }) => (
-                <div key={idx} className={`px-4 py-3 transition-colors ${s.completed ? "bg-emerald-500/5" : ""}`}>
-                  <div className="flex items-center gap-3">
-                    {/* Set number */}
-                    <span className="w-5 text-xs text-muted-foreground font-medium shrink-0">#{s.setNumber}</span>
-
-                    {/* Weight */}
-                    <div className="flex items-center gap-1 flex-1">
-                      <input
-                        type="number"
-                        value={s.actualWeight}
-                        onChange={e => updateSet(idx, "actualWeight", e.target.value)}
-                        placeholder={s.targetWeight ? String(s.targetWeight) : "kg"}
-                        className="w-20 h-9 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                      <span className="text-xs text-muted-foreground">kg</span>
-                    </div>
-
-                    <span className="text-xs text-muted-foreground">×</span>
-
-                    {/* Reps */}
-                    <div className="flex items-center gap-1 flex-1">
-                      <input
-                        type="number"
-                        value={s.actualReps}
-                        onChange={e => updateSet(idx, "actualReps", e.target.value)}
-                        placeholder={String(s.targetReps)}
-                        className="w-16 h-9 rounded-lg border border-border bg-background text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                      <span className="text-xs text-muted-foreground">reps</span>
-                    </div>
-
-                    {/* Done checkbox */}
-                    <button onClick={() => toggleSet(idx)}
-                      className={`h-8 w-8 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
-                        s.completed
-                          ? "border-emerald-500 bg-emerald-500 text-white"
-                          : "border-border hover:border-emerald-400"
-                      }`}>
-                      {s.completed && <Check className="h-4 w-4" />}
-                    </button>
-                  </div>
-
-                  {/* Show target as reference */}
-                  {(s.targetWeight || s.targetReps) && !s.completed && (
-                    <p className="text-[10px] text-muted-foreground mt-1.5 pl-8">
-                      Target: {s.targetWeight ? `${s.targetWeight}kg` : "–"} × {s.targetReps}
-                    </p>
-                  )}
-                </div>
+                <button
+                  key={idx}
+                  onClick={() => toggleSet(idx)}
+                  className={`h-12 w-12 rounded-xl border-2 flex items-center justify-center font-bold transition-colors ${
+                    s.completed
+                      ? "border-emerald-500 bg-emerald-500 text-white"
+                      : "border-border hover:border-emerald-400/60 text-muted-foreground"
+                  }`}
+                >
+                  {s.completed ? <Check className="h-4 w-4" /> : <span className="text-sm">{s.setNumber}</span>}
+                </button>
               ))}
             </div>
           </div>
@@ -1401,10 +1423,7 @@ function WorkoutView({ availableGroups, date, onSaved, onBack }: {
       {saveError && <p className="text-xs text-rose-400 text-center">{saveError}</p>}
 
       <Button className="w-full" size="lg" onClick={save} disabled={saving || completedCount === 0}>
-        {saving
-          ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          : <Check className="h-4 w-4 mr-2" />
-        }
+        {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
         {saving ? "Saving…" : `Save Workout (${completedCount} set${completedCount !== 1 ? "s" : ""})`}
       </Button>
     </div>
