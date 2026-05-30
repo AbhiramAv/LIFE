@@ -1941,14 +1941,8 @@ function ProgressTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <select value={selectedId ?? ""} onChange={e => setSelectedId(parseInt(e.target.value))}
-            className="w-full appearance-none rounded-lg border border-border bg-card px-3 py-2 text-sm pr-8 focus:outline-none">
-            {loggedExercises.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
-          </select>
-          <ChevronRight className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none rotate-90" />
-        </div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-foreground">Select exercise</p>
         <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
           {(["kg","lbs"] as const).map(uu => (
             <button key={uu} onClick={() => setUnit(uu)}
@@ -1957,6 +1951,26 @@ function ProgressTab() {
             </button>
           ))}
         </div>
+      </div>
+      <div className="space-y-3">
+        {CATS.filter(cat => loggedExercises.some(e => e.category === cat)).map(cat => (
+          <div key={cat}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: CAT_COLOR[cat] }}>{cat}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {loggedExercises.filter(e => e.category === cat).map(ex => (
+                <button key={ex.id} onClick={() => setSelectedId(ex.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                    selectedId === ex.id
+                      ? "border-transparent text-black"
+                      : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+                  }`}
+                  style={selectedId === ex.id ? { backgroundColor: CAT_COLOR[cat] } : {}}>
+                  {ex.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       {loading ? (
@@ -2022,6 +2036,9 @@ function daysSince(iso: string) {
   return `${diff}d ago`;
 }
 
+const daysAgoOf = (iso: string) => Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
+const fmtVol    = (kg: number)  => kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${kg}kg`;
+
 function MusclesTab() {
   const [days, setDays]       = useState(7);
   const [data, setData]       = useState<MuscleFreq[]>([]);
@@ -2034,7 +2051,49 @@ function MusclesTab() {
       .finally(() => setLoading(false));
   }, [days]);
 
-  const maxSets = Math.max(...data.map(d => d.sets), 1);
+  const maxSets       = Math.max(...data.map(d => d.sets), 1);
+  const needsTraining = data.filter(d => daysAgoOf(d.lastTrained) >= 5)
+    .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained));
+  const wellTrained   = data.filter(d => daysAgoOf(d.lastTrained) < 5)
+    .sort((a, b) => daysAgoOf(a.lastTrained) - daysAgoOf(b.lastTrained));
+
+  const renderRow = (d: MuscleFreq) => {
+    const da    = daysAgoOf(d.lastTrained);
+    const color = CAT_COLOR[d.category] ?? "#6b7280";
+    const freshHex = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
+    const border   = da <= 2 ? "#10b98140" : da <= 4 ? "#f59e0b30" : "#f43f5e35";
+    const bg       = da <= 2 ? "#10b98108" : da <= 4 ? "#f59e0b08" : "#f43f5e07";
+    return (
+      <div key={d.muscle} className="rounded-xl p-3.5 space-y-2.5" style={{ border: `1px solid ${border}`, background: bg }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <span className="text-sm font-semibold truncate">{d.muscle}</span>
+            <span className="text-[10px] text-muted-foreground capitalize shrink-0">{d.category}</span>
+          </div>
+          <span className="text-xs font-semibold shrink-0" style={{ color: freshHex }}>{daysSince(d.lastTrained)}</span>
+        </div>
+        <div className="flex gap-5">
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Sets</p>
+            <p className="text-sm font-bold tabular-nums">{d.sets}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Sessions</p>
+            <p className="text-sm font-bold tabular-nums">{d.sessions}</p>
+          </div>
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Volume</p>
+            <p className="text-sm font-bold tabular-nums text-muted-foreground">{fmtVol(d.volume)}</p>
+          </div>
+        </div>
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full transition-[width] duration-500"
+            style={{ width: `${(d.sets / maxSets) * 100}%`, backgroundColor: color }} />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -2056,32 +2115,44 @@ function MusclesTab() {
             </div>
           )
           : (
-            <div className="space-y-2.5">
-              {data.map(d => {
-                const daysAgo = Math.floor((Date.now() - new Date(d.lastTrained + "T00:00:00").getTime()) / 86400000);
-                const freshColor = daysAgo === 0 ? "text-emerald-400" : daysAgo <= 2 ? "text-emerald-400" : daysAgo <= 5 ? "text-amber-400" : "text-rose-400";
-                const color = CAT_COLOR[d.category] ?? "#6b7280";
-                return (
-                  <div key={d.muscle} className="rounded-xl border border-border bg-card p-3.5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span className="text-sm font-semibold truncate">{d.muscle}</span>
-                        <span className="text-[10px] text-muted-foreground capitalize shrink-0">{d.category}</span>
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Recovery Overview</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {data.map(d => {
+                    const da = daysAgoOf(d.lastTrained);
+                    const bc = da <= 2 ? "#10b98150" : da <= 4 ? "#f59e0b30" : "#f43f5e50";
+                    const bg = da <= 2 ? "#10b98118" : da <= 4 ? "#f59e0b10" : "#f43f5e10";
+                    const lc = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
+                    return (
+                      <div key={d.muscle} className="rounded-lg p-1.5 text-center" style={{ border: `1px solid ${bc}`, background: bg }}>
+                        <p className="text-[8px] font-bold uppercase leading-none truncate" style={{ color: lc }}>{daysSince(d.lastTrained)}</p>
+                        <p className="text-[11px] font-bold text-foreground leading-tight mt-0.5 truncate">{d.muscle}</p>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 text-right">
-                        <span className="text-xs text-muted-foreground">{d.sets} sets</span>
-                        <span className="text-xs text-muted-foreground">{d.volume > 0 ? `${d.volume}kg` : ""}</span>
-                        <span className={`text-xs font-medium ${freshColor}`}>{daysSince(d.lastTrained)}</span>
-                      </div>
-                    </div>
-                    <div className="h-1 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-[width] duration-500"
-                        style={{ width:`${(d.sets / maxSets) * 100}%`, backgroundColor: color }}/>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {needsTraining.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-rose-500">Needs Training</p>
                   </div>
-                );
-              })}
+                  <div className="space-y-2">{needsTraining.map(renderRow)}</div>
+                </div>
+              )}
+
+              {wellTrained.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Well Trained</p>
+                  </div>
+                  <div className="space-y-2">{wellTrained.map(renderRow)}</div>
+                </div>
+              )}
             </div>
           )
       }
