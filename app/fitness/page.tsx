@@ -2095,10 +2095,20 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
   const [showExList, setShowExList]   = useState(false);
   const [loading, setLoading]         = useState(true);
 
-  const monthChips = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i));
-    return { key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("en-US", { month: "short" }) };
-  });
+  const goToPrevMonth = () => {
+    const [y, mo] = month.split("-").map(Number);
+    const d = new Date(y, mo - 2, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+  const goToNextMonth = () => {
+    const [y, mo] = month.split("-").map(Number);
+    const d = new Date(y, mo, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+  const isCurrentMonth = (() => {
+    const n = new Date();
+    return month === `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
+  })();
 
   const days = (() => {
     const [y, mo] = month.split("-").map(Number);
@@ -2197,26 +2207,32 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <div className="overflow-x-auto">
-          <div className="flex gap-1.5 w-max pb-0.5">
-            {monthChips.map(({ key, label }) => (
-              <button key={key} onClick={() => setMonth(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  month === key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-                }`}>
-                {label}
-              </button>
-            ))}
+      <div className="space-y-3">
+        {/* Month navigator */}
+        <div className="flex items-center gap-3">
+          <button onClick={goToPrevMonth}
+            className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="flex-1 text-center">
+            <p className="text-base font-bold tracking-tight">
+              {new Date(calY, calMo - 1, 1).toLocaleDateString("en-US", { month: "long" })}
+            </p>
+            <p className="text-xs text-muted-foreground tabular-nums">{calY}</p>
           </div>
+          <button onClick={goToNextMonth} disabled={isCurrentMonth}
+            className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30 disabled:cursor-not-allowed">
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
-        <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium w-fit">
+        {/* Period pills */}
+        <div className="flex bg-muted/60 rounded-xl p-1 gap-1">
           {([7, 14, 21, "month"] as const).map(p => (
             <button key={String(p)} onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 transition-colors ${
-                period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                period === p ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}>
-              {p === "month" ? "Mo" : `${p}d`}
+              {p === 7 ? "1W" : p === 14 ? "2W" : p === 21 ? "3W" : "Full"}
             </button>
           ))}
         </div>
@@ -2286,25 +2302,35 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                     {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
                   </div>
                   <div className="space-y-1">
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1">
                       {["M","T","W","T","F","S","S"].map((d, i) => (
-                        <div key={i} className="flex-1 text-center text-[9px] font-bold text-muted-foreground/50">{d}</div>
+                        <div key={i} className="flex-1 text-center text-[9px] font-bold text-muted-foreground/40 pb-0.5">{d}</div>
                       ))}
                     </div>
                     {calWeeks.map((week, wi) => (
-                      <div key={wi} className="flex gap-1.5">
+                      <div key={wi} className="flex gap-1">
                         {week.map(cell => {
+                          const dayNum = parseInt(cell.iso.slice(8));
                           if (!cell.inWindow) {
-                            return <div key={cell.iso} className="flex-1 h-5 rounded-sm bg-muted opacity-20" />;
+                            return <div key={cell.iso} className="flex-1 h-8" />;
                           }
                           const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
+                          if (color) {
+                            return (
+                              <div key={cell.iso}
+                                className="flex-1 h-8 rounded-lg flex items-center justify-center"
+                                style={{ backgroundColor: color + "25", border: `2px solid ${color}` }}
+                                title={`${cell.iso} · ${cell.cat}`}>
+                                <span className="text-xs font-bold tabular-nums leading-none" style={{ color }}>{dayNum}</span>
+                              </div>
+                            );
+                          }
                           return (
-                            <div key={cell.iso} title={cell.iso + (cell.cat ? ` · ${cell.cat}` : "")}
-                              className="flex-1 h-5 rounded-sm transition-colors"
-                              style={color
-                                ? { backgroundColor: color + "50", border: `1.5px solid ${color}` }
-                                : { backgroundColor: "transparent", border: "1.5px solid #374151" }
-                              } />
+                            <div key={cell.iso}
+                              className="flex-1 h-8 rounded-lg flex items-center justify-center border border-border/30"
+                              title={cell.iso}>
+                              <span className="text-[10px] font-medium tabular-nums leading-none text-muted-foreground/40">{dayNum}</span>
+                            </div>
                           );
                         })}
                         {week.length < 7 && Array.from({ length: 7 - week.length }, (_, i) => (
