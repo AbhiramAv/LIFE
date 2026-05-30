@@ -2083,7 +2083,11 @@ const SESSION_TYPE_COLOR: Record<string, string> = {
 };
 
 function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscles") => void }) {
-  const [days, setDays]               = useState(30);
+  const [month, setMonth]             = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+  const [period, setPeriod]           = useState<number | "month">(7);
   const [current, setCurrent]         = useState<MuscleFreq[]>([]);
   const [prev, setPrev]               = useState<MuscleFreq[]>([]);
   const [sessions, setSessions]       = useState<SessionInfo[]>([]);
@@ -2091,19 +2095,42 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
   const [showExList, setShowExList]   = useState(false);
   const [loading, setLoading]         = useState(true);
 
+  const monthChips = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (5 - i));
+    return { key: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`, label: d.toLocaleDateString("en-US", { month: "short" }) };
+  });
+
+  const days = (() => {
+    const [y, mo] = month.split("-").map(Number);
+    const todayD = new Date(); todayD.setHours(0,0,0,0);
+    const lastOfMonth = new Date(y, mo, 0); lastOfMonth.setHours(0,0,0,0);
+    const winEnd = lastOfMonth <= todayD ? lastOfMonth : todayD;
+    return period === "month"
+      ? Math.floor((winEnd.getTime() - new Date(y, mo-1, 1).getTime()) / 86400000) + 1
+      : period as number;
+  })();
+
   useEffect(() => {
+    const [y, mo] = month.split("-").map(Number);
+    const todayD = new Date(); todayD.setHours(0,0,0,0);
+    const lastOfMonth = new Date(y, mo, 0); lastOfMonth.setHours(0,0,0,0);
+    const winEnd = lastOfMonth <= todayD ? lastOfMonth : todayD;
+    const off = Math.floor((todayD.getTime() - winEnd.getTime()) / 86400000);
+    const d = period === "month"
+      ? Math.floor((winEnd.getTime() - new Date(y, mo-1, 1).getTime()) / 86400000) + 1
+      : period as number;
     setLoading(true);
     Promise.all([
-      fetch(`/api/fitness/muscles?days=${days}`).then(r => r.json()),
-      fetch(`/api/fitness/muscles?days=${days}&offset=${days}`).then(r => r.json()),
-      fetch(`/api/fitness/insights?days=${days}`).then(r => r.json()),
+      fetch(`/api/fitness/muscles?days=${d}&offset=${off}`).then(r => r.json()),
+      fetch(`/api/fitness/muscles?days=${d}&offset=${off + d}`).then(r => r.json()),
+      fetch(`/api/fitness/insights?days=${d}&offset=${off}`).then(r => r.json()),
     ]).then(([cur, prv, ins]) => {
       if (Array.isArray(cur)) setCurrent(cur);
       if (Array.isArray(prv)) setPrev(prv);
       if (ins?.sessions) setSessions(ins.sessions);
       if (ins?.uniqueExercises) setExercises(ins.uniqueExercises);
     }).finally(() => setLoading(false));
-  }, [days]);
+  }, [month, period]);
 
   const groups        = groupByCategory(current);
   const prevGroups    = groupByCategory(prev);
@@ -2114,10 +2141,6 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
   const totalSets     = groups.reduce((s, g) => s + g.sets, 0);
   const prevTotalSets = prevGroups.reduce((s, g) => s + g.sets, 0);
   const volumeDelta   = prevTotalSets > 0 ? Math.round((totalSets - prevTotalSets) / prevTotalSets * 100) : null;
-  const trainToday    = groups
-    .filter(g => daysAgoOf(g.lastTrained) >= 5)
-    .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained))
-    .slice(0, 3);
 
   // Session type distribution
   const typeCount: Record<string, number> = {};
@@ -2127,7 +2150,6 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
   }
   const typeOrder = ["Push","Pull","Lower","Upper","Full Body","Accessory","Other"];
   const typeSorted = typeOrder.filter(t => typeCount[t]).map(t => ({ type: t, count: typeCount[t] }));
-  const maxTypeCount = Math.max(...typeSorted.map(t => t.count), 1);
 
   // Dominant split inference
   const hasPush = typeCount["Push"] > 0, hasPull = typeCount["Pull"] > 0, hasLower = typeCount["Lower"] > 0;
@@ -2140,26 +2162,29 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
     : hasPush && !hasPull ? "Push-focused"
     : null;
 
-  // Training calendar — Mon–Sun aligned grid
+  // Training calendar — Mon–Sun aligned grid, window end = last day of selected month or today
   const trainedSet  = new Set(sessions.map(s => s.date));
-  const catByDate   = Object.fromEntries(sessions.map(s => [s.date, s.categories[0] ?? "other"]));
-  const today       = new Date(); today.setHours(0,0,0,0);
-  const todayIso    = today.toISOString().slice(0,10);
-  const windowStart = new Date(today); windowStart.setDate(today.getDate() - days + 1);
+  const typeByDate  = Object.fromEntries(sessions.map(s => [s.date, classifySession(s.categories)]));
+  const [calY, calMo] = month.split("-").map(Number);
+  const calTodayD = new Date(); calTodayD.setHours(0,0,0,0);
+  const calLastOfMonth = new Date(calY, calMo, 0); calLastOfMonth.setHours(0,0,0,0);
+  const calWindowEnd = calLastOfMonth <= calTodayD ? calLastOfMonth : calTodayD;
+  const winEndIso   = calWindowEnd.toISOString().slice(0,10);
+  const windowStart = new Date(calWindowEnd); windowStart.setDate(calWindowEnd.getDate() - days + 1);
   const winStartIso = windowStart.toISOString().slice(0,10);
   // Snap to Monday of the first week
   const wsDay     = windowStart.getDay();
   const gridStart = new Date(windowStart); gridStart.setDate(windowStart.getDate() - (wsDay === 0 ? 6 : wsDay - 1));
-  // Snap to Sunday of the current week
-  const todDay   = today.getDay();
-  const gridEnd  = new Date(today); gridEnd.setDate(today.getDate() + (todDay === 0 ? 0 : 7 - todDay));
+  // Snap to Sunday of the last week
+  const weDay   = calWindowEnd.getDay();
+  const gridEnd = new Date(calWindowEnd); gridEnd.setDate(calWindowEnd.getDate() + (weDay === 0 ? 0 : 7 - weDay));
 
   type CalCell = { iso: string; inWindow: boolean; trained: boolean; cat: string | null };
   const calGrid: CalCell[] = [];
   const cur = new Date(gridStart);
   while (cur <= gridEnd) {
     const iso = cur.toISOString().slice(0,10);
-    calGrid.push({ iso, inWindow: iso >= winStartIso && iso <= todayIso, trained: trainedSet.has(iso), cat: catByDate[iso] ?? null });
+    calGrid.push({ iso, inWindow: iso >= winStartIso && iso <= winEndIso, trained: trainedSet.has(iso), cat: typeByDate[iso] ?? null });
     cur.setDate(cur.getDate() + 1);
   }
   const calWeeks: CalCell[][] = [];
@@ -2172,13 +2197,29 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
 
   return (
     <div className="space-y-5">
-      <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium w-fit">
-        {[7,14,30].map(d => (
-          <button key={d} onClick={() => setDays(d)}
-            className={`px-3 py-2 transition-colors ${days===d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            {d}d
-          </button>
-        ))}
+      <div className="space-y-2">
+        <div className="overflow-x-auto">
+          <div className="flex gap-1.5 w-max pb-0.5">
+            {monthChips.map(({ key, label }) => (
+              <button key={key} onClick={() => setMonth(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  month === key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium w-fit">
+          {([7, 14, 21, "month"] as const).map(p => (
+            <button key={String(p)} onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 transition-colors ${
+                period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}>
+              {p === "month" ? "Mo" : `${p}d`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading
@@ -2237,45 +2278,13 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                 </div>
               )}
 
-              {/* Train Today */}
-              {trainToday.length > 0 && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Train Today</p>
-                  <p className="text-sm font-semibold">
-                    {trainToday.map(g => CAT_LABEL[g.category] ?? g.category).join(", ")}
-                  </p>
-                </div>
-              )}
-
-              {/* Split tendency */}
-              {typeSorted.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Split Tendency</p>
-                    {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
-                  </div>
-                  <div className="h-4 rounded-full overflow-hidden flex gap-px">
-                    {typeSorted.map(({ type, count }) => (
-                      <div key={type} className="h-full transition-[flex] duration-500"
-                        style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }}
-                        title={`${type}: ${count} session${count > 1 ? "s" : ""}`} />
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1">
-                    {typeSorted.map(({ type, count }) => (
-                      <div key={type} className="flex items-center gap-1.5">
-                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
-                        <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Training calendar */}
+              {/* Training calendar + split tendency */}
               {calWeeks.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Training Calendar</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Training Calendar</p>
+                    {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
+                  </div>
                   <div className="space-y-1">
                     <div className="flex gap-1.5">
                       {["M","T","W","T","F","S","S"].map((d, i) => (
@@ -2288,11 +2297,11 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                           if (!cell.inWindow) {
                             return <div key={cell.iso} className="flex-1 h-5 rounded-sm bg-muted opacity-20" />;
                           }
-                          const color = cell.cat ? (CAT_COLOR[cell.cat] ?? "#6b7280") : "#6b7280";
+                          const color = cell.trained && cell.cat ? SESSION_TYPE_COLOR[cell.cat] : null;
                           return (
-                            <div key={cell.iso} title={cell.iso}
+                            <div key={cell.iso} title={cell.iso + (cell.cat ? ` · ${cell.cat}` : "")}
                               className="flex-1 h-5 rounded-sm transition-colors"
-                              style={cell.trained
+                              style={color
                                 ? { backgroundColor: color + "50", border: `1.5px solid ${color}` }
                                 : { backgroundColor: "transparent", border: "1.5px solid #374151" }
                               } />
@@ -2304,14 +2313,25 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
                       </div>
                     ))}
                   </div>
-                  <div className="flex gap-3 flex-wrap">
-                    {Object.entries(CAT_COLOR).filter(([k]) => k !== "other").map(([cat, color]) => (
-                      <div key={cat} className="flex items-center gap-1">
-                        <div className="h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
-                        <span className="text-[9px] text-muted-foreground capitalize">{cat}</span>
+                  {typeSorted.length > 0 && (
+                    <>
+                      <div className="h-3 rounded-full overflow-hidden flex gap-px">
+                        {typeSorted.map(({ type, count }) => (
+                          <div key={type} className="h-full"
+                            style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }}
+                            title={`${type}: ${count}`} />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                        {typeSorted.map(({ type, count }) => (
+                          <div key={type} className="flex items-center gap-1.5">
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                            <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
