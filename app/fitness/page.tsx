@@ -2037,63 +2037,57 @@ function daysSince(iso: string) {
 }
 
 const daysAgoOf = (iso: string) => Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
-const fmtVol    = (kg: number)  => kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${kg}kg`;
+
+const CAT_LABEL: Record<string, string> = {
+  push: "Push", pull: "Pull", legs: "Legs", core: "Core", cardio: "Cardio", other: "Other",
+};
+
+type CatGroup = { category: string; sets: number; lastTrained: string };
+
+function groupByCategory(data: MuscleFreq[]): CatGroup[] {
+  const agg: Record<string, CatGroup> = {};
+  for (const d of data) {
+    const cat = d.category;
+    if (!agg[cat]) agg[cat] = { category: cat, sets: 0, lastTrained: d.lastTrained };
+    agg[cat].sets += d.sets;
+    if (d.lastTrained > agg[cat].lastTrained) agg[cat].lastTrained = d.lastTrained;
+  }
+  return Object.values(agg).sort((a, b) => b.sets - a.sets);
+}
+
+function trendArrow(cur: number, prv: number): { symbol: string; color: string } | null {
+  if (prv === 0) return null;
+  const ratio = cur / prv;
+  if (ratio > 1.1) return { symbol: "↑", color: "#10b981" };
+  if (ratio < 0.9) return { symbol: "↓", color: "#f43f5e" };
+  return { symbol: "→", color: "#6b7280" };
+}
 
 function MusclesTab() {
   const [days, setDays]       = useState(7);
-  const [data, setData]       = useState<MuscleFreq[]>([]);
+  const [current, setCurrent] = useState<MuscleFreq[]>([]);
+  const [prev, setPrev]       = useState<MuscleFreq[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/fitness/muscles?days=${days}`).then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setData(d); })
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch(`/api/fitness/muscles?days=${days}`).then(r => r.json()),
+      fetch(`/api/fitness/muscles?days=${days}&offset=${days}`).then(r => r.json()),
+    ]).then(([cur, prv]) => {
+      if (Array.isArray(cur)) setCurrent(cur);
+      if (Array.isArray(prv)) setPrev(prv);
+    }).finally(() => setLoading(false));
   }, [days]);
 
-  const maxSets       = Math.max(...data.map(d => d.sets), 1);
-  const needsTraining = data.filter(d => daysAgoOf(d.lastTrained) >= 5)
-    .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained));
-  const wellTrained   = data.filter(d => daysAgoOf(d.lastTrained) < 5)
-    .sort((a, b) => daysAgoOf(a.lastTrained) - daysAgoOf(b.lastTrained));
-
-  const renderRow = (d: MuscleFreq) => {
-    const da    = daysAgoOf(d.lastTrained);
-    const color = CAT_COLOR[d.category] ?? "#6b7280";
-    const freshHex = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
-    const border   = da <= 2 ? "#10b98140" : da <= 4 ? "#f59e0b30" : "#f43f5e35";
-    const bg       = da <= 2 ? "#10b98108" : da <= 4 ? "#f59e0b08" : "#f43f5e07";
-    return (
-      <div key={d.muscle} className="rounded-xl p-3.5 space-y-2.5" style={{ border: `1px solid ${border}`, background: bg }}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-            <span className="text-sm font-semibold truncate">{d.muscle}</span>
-            <span className="text-[10px] text-muted-foreground capitalize shrink-0">{d.category}</span>
-          </div>
-          <span className="text-xs font-semibold shrink-0" style={{ color: freshHex }}>{daysSince(d.lastTrained)}</span>
-        </div>
-        <div className="flex gap-5">
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Sets</p>
-            <p className="text-sm font-bold tabular-nums">{d.sets}</p>
-          </div>
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Sessions</p>
-            <p className="text-sm font-bold tabular-nums">{d.sessions}</p>
-          </div>
-          <div>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-0.5">Volume</p>
-            <p className="text-sm font-bold tabular-nums text-muted-foreground">{fmtVol(d.volume)}</p>
-          </div>
-        </div>
-        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-          <div className="h-full rounded-full transition-[width] duration-500"
-            style={{ width: `${(d.sets / maxSets) * 100}%`, backgroundColor: color }} />
-        </div>
-      </div>
-    );
-  };
+  const groups   = groupByCategory(current);
+  const prevMap  = Object.fromEntries(groupByCategory(prev).map(g => [g.category, g.sets]));
+  const target   = Math.round(10 * days / 7);
+  const maxSets  = Math.max(...groups.map(g => g.sets), target, 1);
+  const trainToday = groups
+    .filter(g => daysAgoOf(g.lastTrained) >= 5)
+    .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained))
+    .slice(0, 3);
 
   return (
     <div className="space-y-5">
@@ -2107,8 +2101,8 @@ function MusclesTab() {
       </div>
 
       {loading
-        ? Array.from({length:6},(_,i)=><div key={i} className="h-16 rounded-xl bg-muted animate-pulse"/>)
-        : data.length === 0
+        ? Array.from({length:5},(_,i)=><div key={i} className="h-10 rounded-xl bg-muted animate-pulse"/>)
+        : groups.length === 0
           ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center">
               <p className="text-sm text-muted-foreground">No completed workouts in this window.</p>
@@ -2116,43 +2110,53 @@ function MusclesTab() {
           )
           : (
             <div className="space-y-5">
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Recovery Overview</p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {data.map(d => {
-                    const da = daysAgoOf(d.lastTrained);
-                    const bc = da <= 2 ? "#10b98150" : da <= 4 ? "#f59e0b30" : "#f43f5e50";
-                    const bg = da <= 2 ? "#10b98118" : da <= 4 ? "#f59e0b10" : "#f43f5e10";
-                    const lc = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
-                    return (
-                      <div key={d.muscle} className="rounded-lg p-1.5 text-center" style={{ border: `1px solid ${bc}`, background: bg }}>
-                        <p className="text-[8px] font-bold uppercase leading-none truncate" style={{ color: lc }}>{daysSince(d.lastTrained)}</p>
-                        <p className="text-[11px] font-bold text-foreground leading-tight mt-0.5 truncate">{d.muscle}</p>
-                      </div>
-                    );
-                  })}
+              {trainToday.length > 0 && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Train Today</p>
+                  <p className="text-sm font-semibold">
+                    {trainToday.map(g => CAT_LABEL[g.category] ?? g.category).join(", ")}
+                  </p>
                 </div>
+              )}
+
+              <div className="space-y-4">
+                {groups.map(g => {
+                  const color     = CAT_COLOR[g.category] ?? "#6b7280";
+                  const da        = daysAgoOf(g.lastTrained);
+                  const freshHex  = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
+                  const trend     = trendArrow(g.sets, prevMap[g.category] ?? 0);
+                  const barPct    = (g.sets / maxSets) * 100;
+                  const targetPct = (target / maxSets) * 100;
+
+                  return (
+                    <div key={g.category} className="space-y-1.5">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{CAT_LABEL[g.category] ?? g.category}</span>
+                          {trend && (
+                            <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs tabular-nums text-muted-foreground">{g.sets} sets</span>
+                          <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: freshHex }}>{daysSince(g.lastTrained)}</span>
+                        </div>
+                      </div>
+                      <div className="relative h-2 rounded-full bg-muted">
+                        <div className="h-full rounded-full transition-[width] duration-500 overflow-hidden absolute inset-0"
+                          style={{ width: `${barPct}%`, backgroundColor: color }} />
+                        <div className="absolute top-0 h-full w-px bg-foreground/40 z-10"
+                          style={{ left: `${targetPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {needsTraining.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-rose-500">Needs Training</p>
-                  </div>
-                  <div className="space-y-2">{needsTraining.map(renderRow)}</div>
-                </div>
-              )}
-
-              {wellTrained.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Well Trained</p>
-                  </div>
-                  <div className="space-y-2">{wellTrained.map(renderRow)}</div>
-                </div>
-              )}
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                <span className="inline-block w-px h-3 bg-foreground/40" />
+                target: {target} sets / {days}d
+              </p>
             </div>
           )
       }
