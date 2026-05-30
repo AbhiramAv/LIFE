@@ -2027,7 +2027,7 @@ function ProgressTab() {
   );
 }
 
-// ── Muscles tab ────────────────────────────────────────────────────────────────
+// ── Progress tab (training overview) ──────────────────────────────────────────
 
 function daysSince(iso: string) {
   const diff = Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
@@ -2042,7 +2042,8 @@ const CAT_LABEL: Record<string, string> = {
   push: "Push", pull: "Pull", legs: "Legs", core: "Core", cardio: "Cardio", other: "Other",
 };
 
-type CatGroup = { category: string; sets: number; sessions: number; lastTrained: string };
+type CatGroup     = { category: string; sets: number; sessions: number; lastTrained: string };
+type SessionInfo  = { date: string; categories: string[] };
 
 function groupByCategory(data: MuscleFreq[]): CatGroup[] {
   const agg: Record<string, CatGroup> = {};
@@ -2064,39 +2065,110 @@ function trendArrow(cur: number, prv: number): { symbol: string; color: string }
   return { symbol: "→", color: "#6b7280" };
 }
 
-function MusclesTab() {
-  const [days, setDays]       = useState(7);
-  const [current, setCurrent] = useState<MuscleFreq[]>([]);
-  const [prev, setPrev]       = useState<MuscleFreq[]>([]);
-  const [loading, setLoading] = useState(true);
+function classifySession(cats: string[]): string {
+  const s = new Set(cats.filter(c => c !== "core" && c !== "cardio" && c !== "other"));
+  if (s.size === 0) return "Accessory";
+  if (s.has("push") && s.has("pull") && s.has("legs")) return "Full Body";
+  if ((s.has("push") || s.has("pull")) && s.has("legs")) return "Full Body";
+  if (s.has("push") && s.has("pull")) return "Upper";
+  if (s.has("push")) return "Push";
+  if (s.has("pull")) return "Pull";
+  if (s.has("legs")) return "Lower";
+  return "Other";
+}
+
+const SESSION_TYPE_COLOR: Record<string, string> = {
+  Push: "#10b981", Pull: "#0ea5e9", Lower: "#8b5cf6",
+  Upper: "#06b6d4", "Full Body": "#f59e0b", Accessory: "#6b7280", Other: "#6b7280",
+};
+
+function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscles") => void }) {
+  const [days, setDays]               = useState(30);
+  const [current, setCurrent]         = useState<MuscleFreq[]>([]);
+  const [prev, setPrev]               = useState<MuscleFreq[]>([]);
+  const [sessions, setSessions]       = useState<SessionInfo[]>([]);
+  const [exercises, setExercises]     = useState<string[]>([]);
+  const [showExList, setShowExList]   = useState(false);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
       fetch(`/api/fitness/muscles?days=${days}`).then(r => r.json()),
       fetch(`/api/fitness/muscles?days=${days}&offset=${days}`).then(r => r.json()),
-    ]).then(([cur, prv]) => {
+      fetch(`/api/fitness/insights?days=${days}`).then(r => r.json()),
+    ]).then(([cur, prv, ins]) => {
       if (Array.isArray(cur)) setCurrent(cur);
       if (Array.isArray(prv)) setPrev(prv);
+      if (ins?.sessions) setSessions(ins.sessions);
+      if (ins?.uniqueExercises) setExercises(ins.uniqueExercises);
     }).finally(() => setLoading(false));
   }, [days]);
 
-  const groups      = groupByCategory(current);
-  const prevMap     = Object.fromEntries(groupByCategory(prev).map(g => [g.category, g.sets]));
-  const target      = Math.round(10 * days / 7);
-  const maxSets     = Math.max(...groups.map(g => g.sets), target, 1);
-  const weeksInWin  = days / 7;
-  const totalSets   = groups.reduce((s, g) => s + g.sets, 0);
-  const onTarget    = groups.filter(g => g.sets >= target).length;
-  const pushSets    = groups.find(g => g.category === "push")?.sets ?? 0;
-  const pullSets    = groups.find(g => g.category === "pull")?.sets ?? 0;
-  const ppRatio     = pullSets > 0 ? pushSets / pullSets : null;
-  const ppColor     = ppRatio == null ? "#6b7280" : ppRatio <= 1.2 ? "#10b981" : ppRatio <= 1.6 ? "#f59e0b" : "#f43f5e";
-  const pushPct     = (pushSets + pullSets) > 0 ? (pushSets / (pushSets + pullSets)) * 100 : 50;
-  const trainToday  = groups
+  const groups        = groupByCategory(current);
+  const prevGroups    = groupByCategory(prev);
+  const prevMap       = Object.fromEntries(prevGroups.map(g => [g.category, g.sets]));
+  const target        = Math.round(10 * days / 7);
+  const maxSets       = Math.max(...groups.map(g => g.sets), target, 1);
+  const weeksInWin    = days / 7;
+  const totalSets     = groups.reduce((s, g) => s + g.sets, 0);
+  const prevTotalSets = prevGroups.reduce((s, g) => s + g.sets, 0);
+  const volumeDelta   = prevTotalSets > 0 ? Math.round((totalSets - prevTotalSets) / prevTotalSets * 100) : null;
+  const trainToday    = groups
     .filter(g => daysAgoOf(g.lastTrained) >= 5)
     .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained))
     .slice(0, 3);
+
+  // Session type distribution
+  const typeCount: Record<string, number> = {};
+  for (const s of sessions) {
+    const t = classifySession(s.categories);
+    typeCount[t] = (typeCount[t] ?? 0) + 1;
+  }
+  const typeOrder = ["Push","Pull","Lower","Upper","Full Body","Accessory","Other"];
+  const typeSorted = typeOrder.filter(t => typeCount[t]).map(t => ({ type: t, count: typeCount[t] }));
+  const maxTypeCount = Math.max(...typeSorted.map(t => t.count), 1);
+
+  // Dominant split inference
+  const hasPush = typeCount["Push"] > 0, hasPull = typeCount["Pull"] > 0, hasLower = typeCount["Lower"] > 0;
+  const hasUpper = typeCount["Upper"] > 0, hasFB = typeCount["Full Body"] > 0;
+  const splitLabel =
+    hasFB && !hasPush && !hasPull ? "Full Body"
+    : hasUpper && hasLower && !hasPush && !hasPull ? "Upper / Lower"
+    : hasPush && hasPull && hasLower ? "Push / Pull / Legs"
+    : hasPush && hasPull && !hasLower ? "Push / Pull"
+    : hasPush && !hasPull ? "Push-focused"
+    : null;
+
+  // Training calendar — Mon–Sun aligned grid
+  const trainedSet  = new Set(sessions.map(s => s.date));
+  const catByDate   = Object.fromEntries(sessions.map(s => [s.date, s.categories[0] ?? "other"]));
+  const today       = new Date(); today.setHours(0,0,0,0);
+  const todayIso    = today.toISOString().slice(0,10);
+  const windowStart = new Date(today); windowStart.setDate(today.getDate() - days + 1);
+  const winStartIso = windowStart.toISOString().slice(0,10);
+  // Snap to Monday of the first week
+  const wsDay     = windowStart.getDay();
+  const gridStart = new Date(windowStart); gridStart.setDate(windowStart.getDate() - (wsDay === 0 ? 6 : wsDay - 1));
+  // Snap to Sunday of the current week
+  const todDay   = today.getDay();
+  const gridEnd  = new Date(today); gridEnd.setDate(today.getDate() + (todDay === 0 ? 0 : 7 - todDay));
+
+  type CalCell = { iso: string; inWindow: boolean; trained: boolean; cat: string | null };
+  const calGrid: CalCell[] = [];
+  const cur = new Date(gridStart);
+  while (cur <= gridEnd) {
+    const iso = cur.toISOString().slice(0,10);
+    calGrid.push({ iso, inWindow: iso >= winStartIso && iso <= todayIso, trained: trainedSet.has(iso), cat: catByDate[iso] ?? null });
+    cur.setDate(cur.getDate() + 1);
+  }
+  const calWeeks: CalCell[][] = [];
+  for (let i = 0; i < calGrid.length; i += 7) calWeeks.push(calGrid.slice(i, i+7));
+
+  // Light / missed weeks (only within window)
+  const lightWeeks = calWeeks
+    .map(week => ({ start: week[0].iso, count: week.filter(c => c.inWindow && c.trained).length, inWindow: week.some(c => c.inWindow) }))
+    .filter(w => w.inWindow && w.count <= 1);
 
   return (
     <div className="space-y-5">
@@ -2110,7 +2182,7 @@ function MusclesTab() {
       </div>
 
       {loading
-        ? Array.from({length:5},(_,i)=><div key={i} className="h-10 rounded-xl bg-muted animate-pulse"/>)
+        ? Array.from({length:6},(_,i)=><div key={i} className="h-10 rounded-xl bg-muted animate-pulse"/>)
         : groups.length === 0
           ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center">
@@ -2120,33 +2192,52 @@ function MusclesTab() {
           : (
             <div className="space-y-5">
 
-              {/* Summary stat cards */}
+              {/* Summary cards */}
               <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => { setShowExList(v => !v); }}
+                  className="rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:bg-muted/50 transition-colors">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Exercises</p>
+                  <p className="text-lg font-bold tabular-nums leading-none">{exercises.length}</p>
+                  <p className="text-[10px] text-primary mt-0.5">{showExList ? "hide list" : "see all →"}</p>
+                </button>
                 <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Sets</p>
-                  <p className="text-lg font-bold tabular-nums leading-none">{totalSets}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{days}d window</p>
-                </div>
-                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Push:Pull</p>
-                  {ppRatio != null
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Volume Δ</p>
+                  {volumeDelta !== null
                     ? <>
-                        <p className="text-lg font-bold tabular-nums leading-none" style={{ color: ppColor }}>{ppRatio.toFixed(1)}</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: ppColor }}>
-                          {ppRatio <= 1.2 ? "Balanced" : ppRatio <= 1.6 ? "Slightly off" : "Too push-heavy"}
+                        <p className="text-lg font-bold tabular-nums leading-none"
+                          style={{ color: volumeDelta > 0 ? "#10b981" : volumeDelta < 0 ? "#f43f5e" : "#6b7280" }}>
+                          {volumeDelta > 0 ? "+" : ""}{volumeDelta}%
                         </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">vs prev {days}d</p>
                       </>
-                    : <p className="text-sm text-muted-foreground mt-1">—</p>
+                    : <p className="text-sm text-muted-foreground mt-1">No prior data</p>
                   }
                 </div>
                 <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">On Target</p>
-                  <p className="text-lg font-bold tabular-nums leading-none">{onTarget}<span className="text-sm font-normal text-muted-foreground">/{groups.length}</span></p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{target}+ sets each</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Active Days</p>
+                  <p className="text-lg font-bold tabular-nums leading-none">{sessions.length}
+                    <span className="text-sm font-normal text-muted-foreground">/{days}</span>
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{(sessions.length / weeksInWin).toFixed(1)}× per week</p>
                 </div>
               </div>
 
-              {/* Train today callout */}
+              {/* Exercise list */}
+              {showExList && (
+                <div className="rounded-xl border border-border bg-card p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">All exercises this window</p>
+                    <button onClick={() => onNavigate("progress")} className="text-[10px] text-primary font-medium">See progress →</button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {exercises.map(ex => (
+                      <span key={ex} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{ex}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Train Today */}
               {trainToday.length > 0 && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Train Today</p>
@@ -2156,64 +2247,139 @@ function MusclesTab() {
                 </div>
               )}
 
-              {/* Category rows */}
-              <div className="space-y-4">
-                {groups.map(g => {
-                  const color     = CAT_COLOR[g.category] ?? "#6b7280";
-                  const da        = daysAgoOf(g.lastTrained);
-                  const freshHex  = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
-                  const trend     = trendArrow(g.sets, prevMap[g.category] ?? 0);
-                  const barPct    = (g.sets / maxSets) * 100;
-                  const targetPct = (target / maxSets) * 100;
-                  const freqLabel = weeksInWin <= 1
-                    ? `${g.sessions}×`
-                    : `${(g.sessions / weeksInWin).toFixed(1)}×/wk`;
-
-                  return (
-                    <div key={g.category} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{CAT_LABEL[g.category] ?? g.category}</span>
-                          {trend && (
-                            <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>
-                          )}
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">{freqLabel}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs tabular-nums text-muted-foreground">{g.sets} sets</span>
-                          <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: freshHex }}>{daysSince(g.lastTrained)}</span>
-                        </div>
-                      </div>
-                      <div className="relative h-2 rounded-full bg-muted">
-                        <div className="h-full rounded-full transition-[width] duration-500 overflow-hidden absolute inset-0"
-                          style={{ width: `${barPct}%`, backgroundColor: color }} />
-                        <div className="absolute top-0 h-full w-px bg-foreground/40 z-10"
-                          style={{ left: `${targetPct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                <span className="inline-block w-px h-3 bg-foreground/40" />
-                target: {target} sets / {days}d
-              </p>
-
-              {/* Push:Pull balance bar */}
-              {pushSets > 0 && pullSets > 0 && (
+              {/* Split tendency */}
+              {typeSorted.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Push · Pull Balance</p>
-                  <div className="h-3 rounded-full overflow-hidden flex">
-                    <div className="h-full transition-[width] duration-500" style={{ width: `${pushPct}%`, backgroundColor: CAT_COLOR.push ?? "#10b981" }} />
-                    <div className="h-full flex-1" style={{ backgroundColor: CAT_COLOR.pull ?? "#0ea5e9" }} />
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Split Tendency</p>
+                    {splitLabel && <span className="text-[10px] font-semibold text-primary">{splitLabel}</span>}
                   </div>
-                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span style={{ color: CAT_COLOR.push }}>Push {Math.round(pushPct)}%</span>
-                    <span style={{ color: CAT_COLOR.pull }}>Pull {Math.round(100 - pushPct)}%</span>
+                  <div className="h-4 rounded-full overflow-hidden flex gap-px">
+                    {typeSorted.map(({ type, count }) => (
+                      <div key={type} className="h-full transition-[flex] duration-500"
+                        style={{ flex: count, backgroundColor: SESSION_TYPE_COLOR[type] }}
+                        title={`${type}: ${count} session${count > 1 ? "s" : ""}`} />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {typeSorted.map(({ type, count }) => (
+                      <div key={type} className="flex items-center gap-1.5">
+                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SESSION_TYPE_COLOR[type] }} />
+                        <span className="text-[10px] text-muted-foreground">{type} <span className="tabular-nums font-medium text-foreground">{count}</span></span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
+
+              {/* Training calendar */}
+              {calWeeks.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Training Calendar</p>
+                  <div className="space-y-1">
+                    <div className="flex gap-1.5">
+                      {["M","T","W","T","F","S","S"].map((d, i) => (
+                        <div key={i} className="flex-1 text-center text-[9px] font-bold text-muted-foreground/50">{d}</div>
+                      ))}
+                    </div>
+                    {calWeeks.map((week, wi) => (
+                      <div key={wi} className="flex gap-1.5">
+                        {week.map(cell => {
+                          if (!cell.inWindow) {
+                            return <div key={cell.iso} className="flex-1 h-5 rounded-sm bg-muted opacity-20" />;
+                          }
+                          const color = cell.cat ? (CAT_COLOR[cell.cat] ?? "#6b7280") : "#6b7280";
+                          return (
+                            <div key={cell.iso} title={cell.iso}
+                              className="flex-1 h-5 rounded-sm transition-colors"
+                              style={cell.trained
+                                ? { backgroundColor: color + "50", border: `1.5px solid ${color}` }
+                                : { backgroundColor: "transparent", border: "1.5px solid #374151" }
+                              } />
+                          );
+                        })}
+                        {week.length < 7 && Array.from({ length: 7 - week.length }, (_, i) => (
+                          <div key={"empty-"+i} className="flex-1" />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-3 flex-wrap">
+                    {Object.entries(CAT_COLOR).filter(([k]) => k !== "other").map(([cat, color]) => (
+                      <div key={cat} className="flex items-center gap-1">
+                        <div className="h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />
+                        <span className="text-[9px] text-muted-foreground capitalize">{cat}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Light / missed weeks */}
+              {lightWeeks.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Light Weeks</p>
+                  <div className="space-y-1.5">
+                    {lightWeeks.map(w => {
+                      const d = new Date(w.start + "T00:00:00");
+                      const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                      return (
+                        <div key={w.start} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                          <span className="text-xs font-medium">Week of {label}</span>
+                          <span className={`text-xs font-semibold ${w.count === 0 ? "text-rose-500" : "text-amber-500"}`}>
+                            {w.count === 0 ? "Missed" : `${w.count} session`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Movement breakdown */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Movement Breakdown</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {groups.map(g => {
+                    const color     = CAT_COLOR[g.category] ?? "#6b7280";
+                    const da        = daysAgoOf(g.lastTrained);
+                    const freshHex  = da <= 2 ? "#10b981" : da <= 4 ? "#f59e0b" : "#f43f5e";
+                    const trend     = trendArrow(g.sets, prevMap[g.category] ?? 0);
+                    const barPct    = (g.sets / maxSets) * 100;
+                    const targetPct = (target / maxSets) * 100;
+                    const freqLabel = weeksInWin <= 1 ? `${g.sessions}×` : `${(g.sessions / weeksInWin).toFixed(1)}×/wk`;
+
+                    return (
+                      <div key={g.category} className="rounded-xl border border-border bg-card p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                            <span className="text-sm font-semibold">{CAT_LABEL[g.category] ?? g.category}</span>
+                            {trend && <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>}
+                          </div>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                            style={{ color: freshHex, backgroundColor: freshHex + "18" }}>{daysSince(g.lastTrained)}</span>
+                        </div>
+                        <div className="relative h-1.5 rounded-full bg-muted">
+                          <div className="h-full rounded-full transition-[width] duration-500 overflow-hidden absolute inset-0"
+                            style={{ width: `${barPct}%`, backgroundColor: color }} />
+                          <div className="absolute top-0 h-full w-px bg-foreground/40 z-10"
+                            style={{ left: `${targetPct}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground tabular-nums">{g.sets} sets</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">{freqLabel}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                  <span className="inline-block w-px h-3 bg-foreground/40" />
+                  target: {target} sets / {days}d
+                </p>
+              </div>
+
             </div>
           )
       }
@@ -2225,8 +2391,8 @@ function MusclesTab() {
 
 const TABS = [
   { id:"plan",     label:"Plan",     icon:Dumbbell   },
-  { id:"progress", label:"Progress", icon:TrendingUp  },
-  { id:"muscles",  label:"Muscles",  icon:Activity   },
+  { id:"progress", label:"Muscles",  icon:TrendingUp  },
+  { id:"muscles",  label:"Progress", icon:Activity   },
 ] as const;
 
 export default function FitnessPage() {
@@ -2258,7 +2424,7 @@ export default function FitnessPage() {
 
       {tab === "plan"     && <PlanTab allExercises={allExercises} />}
       {tab === "progress" && <ProgressTab />}
-      {tab === "muscles"  && <MusclesTab />}
+      {tab === "muscles"  && <MusclesTab onNavigate={setTab} />}
     </div>
   );
 }
