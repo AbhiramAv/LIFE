@@ -2083,17 +2083,20 @@ const SESSION_TYPE_COLOR: Record<string, string> = {
 };
 
 function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscles") => void }) {
-  const [month, setMonth]             = useState(() => {
+  const [viewMode, setViewMode]         = useState<"monthly" | "rolling">("monthly");
+  const [month, setMonth]               = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   });
-  const [period, setPeriod]           = useState<number | "month">(7);
-  const [current, setCurrent]         = useState<MuscleFreq[]>([]);
-  const [prev, setPrev]               = useState<MuscleFreq[]>([]);
-  const [sessions, setSessions]       = useState<SessionInfo[]>([]);
-  const [exercises, setExercises]     = useState<string[]>([]);
-  const [showExList, setShowExList]   = useState(false);
-  const [loading, setLoading]         = useState(true);
+  const [period, setPeriod]             = useState<number | "month">(7);
+  const [rollingDays, setRollingDays]   = useState(30);
+  const [showMonthGrid, setShowMonthGrid] = useState(false);
+  const [current, setCurrent]           = useState<MuscleFreq[]>([]);
+  const [prev, setPrev]                 = useState<MuscleFreq[]>([]);
+  const [sessions, setSessions]         = useState<SessionInfo[]>([]);
+  const [exercises, setExercises]       = useState<string[]>([]);
+  const [showExList, setShowExList]     = useState(false);
+  const [loading, setLoading]           = useState(true);
 
   const goToPrevMonth = () => {
     const [y, mo] = month.split("-").map(Number);
@@ -2110,25 +2113,36 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
     return month === `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
   })();
 
-  const days = (() => {
+  // Compute days for render-time use
+  let days: number;
+  if (viewMode === "rolling") {
+    days = rollingDays;
+  } else {
     const [y, mo] = month.split("-").map(Number);
     const todayD = new Date(); todayD.setHours(0,0,0,0);
     const lastOfMonth = new Date(y, mo, 0); lastOfMonth.setHours(0,0,0,0);
     const winEnd = lastOfMonth <= todayD ? lastOfMonth : todayD;
-    return period === "month"
+    days = period === "month"
       ? Math.floor((winEnd.getTime() - new Date(y, mo-1, 1).getTime()) / 86400000) + 1
       : period as number;
-  })();
+  }
 
   useEffect(() => {
-    const [y, mo] = month.split("-").map(Number);
-    const todayD = new Date(); todayD.setHours(0,0,0,0);
-    const lastOfMonth = new Date(y, mo, 0); lastOfMonth.setHours(0,0,0,0);
-    const winEnd = lastOfMonth <= todayD ? lastOfMonth : todayD;
-    const off = Math.floor((todayD.getTime() - winEnd.getTime()) / 86400000);
-    const d = period === "month"
-      ? Math.floor((winEnd.getTime() - new Date(y, mo-1, 1).getTime()) / 86400000) + 1
-      : period as number;
+    let d: number;
+    let off: number;
+    if (viewMode === "rolling") {
+      d = rollingDays;
+      off = 0;
+    } else {
+      const [y, mo] = month.split("-").map(Number);
+      const todayD = new Date(); todayD.setHours(0,0,0,0);
+      const lastOfMonth = new Date(y, mo, 0); lastOfMonth.setHours(0,0,0,0);
+      const winEnd = lastOfMonth <= todayD ? lastOfMonth : todayD;
+      off = Math.floor((todayD.getTime() - winEnd.getTime()) / 86400000);
+      d = period === "month"
+        ? Math.floor((winEnd.getTime() - new Date(y, mo-1, 1).getTime()) / 86400000) + 1
+        : period as number;
+    }
     setLoading(true);
     Promise.all([
       fetch(`/api/fitness/muscles?days=${d}&offset=${off}`).then(r => r.json()),
@@ -2140,7 +2154,7 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
       if (ins?.sessions) setSessions(ins.sessions);
       if (ins?.uniqueExercises) setExercises(ins.uniqueExercises);
     }).finally(() => setLoading(false));
-  }, [month, period]);
+  }, [viewMode, month, period, rollingDays]);
 
   const groups        = groupByCategory(current);
   const prevGroups    = groupByCategory(prev);
@@ -2172,13 +2186,15 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
     : hasPush && !hasPull ? "Push-focused"
     : null;
 
-  // Training calendar — Mon–Sun aligned grid, window end = last day of selected month or today
+  // Training calendar — Mon–Sun aligned grid
   const trainedSet  = new Set(sessions.map(s => s.date));
   const typeByDate  = Object.fromEntries(sessions.map(s => [s.date, classifySession(s.categories)]));
   const [calY, calMo] = month.split("-").map(Number);
   const calTodayD = new Date(); calTodayD.setHours(0,0,0,0);
   const calLastOfMonth = new Date(calY, calMo, 0); calLastOfMonth.setHours(0,0,0,0);
-  const calWindowEnd = calLastOfMonth <= calTodayD ? calLastOfMonth : calTodayD;
+  const calWindowEnd = viewMode === "rolling"
+    ? calTodayD
+    : (calLastOfMonth <= calTodayD ? calLastOfMonth : calTodayD);
   const winEndIso   = calWindowEnd.toISOString().slice(0,10);
   const windowStart = new Date(calWindowEnd); windowStart.setDate(calWindowEnd.getDate() - days + 1);
   const winStartIso = windowStart.toISOString().slice(0,10);
@@ -2208,34 +2224,85 @@ function MusclesTab({ onNavigate }: { onNavigate: (tab: "plan"|"progress"|"muscl
   return (
     <div className="space-y-5">
       <div className="space-y-3">
-        {/* Month navigator */}
-        <div className="flex items-center gap-3">
-          <button onClick={goToPrevMonth}
-            className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <div className="flex-1 text-center">
-            <p className="text-base font-bold tracking-tight">
-              {new Date(calY, calMo - 1, 1).toLocaleDateString("en-US", { month: "long" })}
-            </p>
-            <p className="text-xs text-muted-foreground tabular-nums">{calY}</p>
-          </div>
-          <button onClick={goToNextMonth} disabled={isCurrentMonth}
-            className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30 disabled:cursor-not-allowed">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-        {/* Period pills */}
+        {/* Mode toggle */}
         <div className="flex bg-muted/60 rounded-xl p-1 gap-1">
-          {([7, 14, 21, "month"] as const).map(p => (
-            <button key={String(p)} onClick={() => setPeriod(p)}
+          {(["monthly", "rolling"] as const).map(m => (
+            <button key={m} onClick={() => setViewMode(m)}
               className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-200 ${
-                period === p ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                viewMode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}>
-              {p === 7 ? "1W" : p === 14 ? "2W" : p === 21 ? "3W" : "Full"}
+              {m === "monthly" ? "Monthly" : "Range"}
             </button>
           ))}
         </div>
+
+        {viewMode === "monthly" ? (
+          <div className="space-y-3">
+            {/* Month navigator — tap title to jump */}
+            <div className="flex items-center gap-3">
+              <button onClick={goToPrevMonth}
+                className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button onClick={() => setShowMonthGrid(v => !v)} className="flex-1 text-center">
+                <p className="text-base font-bold tracking-tight">
+                  {new Date(calY, calMo - 1, 1).toLocaleDateString("en-US", { month: "long" })}
+                  <span className="text-muted-foreground text-xs ml-1.5">▾</span>
+                </p>
+                <p className="text-xs text-muted-foreground tabular-nums">{calY}</p>
+              </button>
+              <button onClick={goToNextMonth} disabled={isCurrentMonth}
+                className="h-9 w-9 flex items-center justify-center rounded-full border border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            {/* Month quick-pick grid (last 12 months) */}
+            {showMonthGrid && (
+              <div className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-2">
+                {Array.from({ length: 12 }, (_, i) => {
+                  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - (11 - i));
+                  const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+                  const isSelected = key === month;
+                  const isFuture = key > `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
+                  return (
+                    <button key={key} disabled={isFuture} onClick={() => { setMonth(key); setShowMonthGrid(false); }}
+                      className={`py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                        isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      }`}>
+                      {d.toLocaleDateString("en-US", { month: "short" })}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Period sub-filter */}
+            <div className="flex bg-muted/60 rounded-xl p-1 gap-1">
+              {([7, 14, 21, "month"] as const).map(p => (
+                <button key={String(p)} onClick={() => setPeriod(p)}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                    period === p ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}>
+                  {p === 7 ? "1W" : p === 14 ? "2W" : p === 21 ? "3W" : "Full"}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Rolling range — cumulative windows from today */
+          <div className="space-y-1.5">
+            <div className="flex bg-muted/60 rounded-xl p-1 gap-1">
+              {([30, 60, 90, 180] as const).map(d => (
+                <button key={d} onClick={() => setRollingDays(d)}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                    rollingDays === d ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}>
+                  {d === 30 ? "1M" : d === 60 ? "2M" : d === 90 ? "3M" : "6M"}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground text-center">last {rollingDays} days from today</p>
+          </div>
+        )}
       </div>
 
       {loading
