@@ -2042,14 +2042,15 @@ const CAT_LABEL: Record<string, string> = {
   push: "Push", pull: "Pull", legs: "Legs", core: "Core", cardio: "Cardio", other: "Other",
 };
 
-type CatGroup = { category: string; sets: number; lastTrained: string };
+type CatGroup = { category: string; sets: number; sessions: number; lastTrained: string };
 
 function groupByCategory(data: MuscleFreq[]): CatGroup[] {
   const agg: Record<string, CatGroup> = {};
   for (const d of data) {
     const cat = d.category;
-    if (!agg[cat]) agg[cat] = { category: cat, sets: 0, lastTrained: d.lastTrained };
+    if (!agg[cat]) agg[cat] = { category: cat, sets: 0, sessions: 0, lastTrained: d.lastTrained };
     agg[cat].sets += d.sets;
+    agg[cat].sessions = Math.max(agg[cat].sessions, d.sessions);
     if (d.lastTrained > agg[cat].lastTrained) agg[cat].lastTrained = d.lastTrained;
   }
   return Object.values(agg).sort((a, b) => b.sets - a.sets);
@@ -2080,11 +2081,19 @@ function MusclesTab() {
     }).finally(() => setLoading(false));
   }, [days]);
 
-  const groups   = groupByCategory(current);
-  const prevMap  = Object.fromEntries(groupByCategory(prev).map(g => [g.category, g.sets]));
-  const target   = Math.round(10 * days / 7);
-  const maxSets  = Math.max(...groups.map(g => g.sets), target, 1);
-  const trainToday = groups
+  const groups      = groupByCategory(current);
+  const prevMap     = Object.fromEntries(groupByCategory(prev).map(g => [g.category, g.sets]));
+  const target      = Math.round(10 * days / 7);
+  const maxSets     = Math.max(...groups.map(g => g.sets), target, 1);
+  const weeksInWin  = days / 7;
+  const totalSets   = groups.reduce((s, g) => s + g.sets, 0);
+  const onTarget    = groups.filter(g => g.sets >= target).length;
+  const pushSets    = groups.find(g => g.category === "push")?.sets ?? 0;
+  const pullSets    = groups.find(g => g.category === "pull")?.sets ?? 0;
+  const ppRatio     = pullSets > 0 ? pushSets / pullSets : null;
+  const ppColor     = ppRatio == null ? "#6b7280" : ppRatio <= 1.2 ? "#10b981" : ppRatio <= 1.6 ? "#f59e0b" : "#f43f5e";
+  const pushPct     = (pushSets + pullSets) > 0 ? (pushSets / (pushSets + pullSets)) * 100 : 50;
+  const trainToday  = groups
     .filter(g => daysAgoOf(g.lastTrained) >= 5)
     .sort((a, b) => daysAgoOf(b.lastTrained) - daysAgoOf(a.lastTrained))
     .slice(0, 3);
@@ -2110,6 +2119,34 @@ function MusclesTab() {
           )
           : (
             <div className="space-y-5">
+
+              {/* Summary stat cards */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Total Sets</p>
+                  <p className="text-lg font-bold tabular-nums leading-none">{totalSets}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{days}d window</p>
+                </div>
+                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Push:Pull</p>
+                  {ppRatio != null
+                    ? <>
+                        <p className="text-lg font-bold tabular-nums leading-none" style={{ color: ppColor }}>{ppRatio.toFixed(1)}</p>
+                        <p className="text-[10px] mt-0.5" style={{ color: ppColor }}>
+                          {ppRatio <= 1.2 ? "Balanced" : ppRatio <= 1.6 ? "Slightly off" : "Too push-heavy"}
+                        </p>
+                      </>
+                    : <p className="text-sm text-muted-foreground mt-1">—</p>
+                  }
+                </div>
+                <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">On Target</p>
+                  <p className="text-lg font-bold tabular-nums leading-none">{onTarget}<span className="text-sm font-normal text-muted-foreground">/{groups.length}</span></p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{target}+ sets each</p>
+                </div>
+              </div>
+
+              {/* Train today callout */}
               {trainToday.length > 0 && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Train Today</p>
@@ -2119,6 +2156,7 @@ function MusclesTab() {
                 </div>
               )}
 
+              {/* Category rows */}
               <div className="space-y-4">
                 {groups.map(g => {
                   const color     = CAT_COLOR[g.category] ?? "#6b7280";
@@ -2127,6 +2165,9 @@ function MusclesTab() {
                   const trend     = trendArrow(g.sets, prevMap[g.category] ?? 0);
                   const barPct    = (g.sets / maxSets) * 100;
                   const targetPct = (target / maxSets) * 100;
+                  const freqLabel = weeksInWin <= 1
+                    ? `${g.sessions}×`
+                    : `${(g.sessions / weeksInWin).toFixed(1)}×/wk`;
 
                   return (
                     <div key={g.category} className="space-y-1.5">
@@ -2136,6 +2177,7 @@ function MusclesTab() {
                           {trend && (
                             <span className="text-xs font-bold" style={{ color: trend.color }}>{trend.symbol}</span>
                           )}
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground font-medium">{freqLabel}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-xs tabular-nums text-muted-foreground">{g.sets} sets</span>
@@ -2157,6 +2199,21 @@ function MusclesTab() {
                 <span className="inline-block w-px h-3 bg-foreground/40" />
                 target: {target} sets / {days}d
               </p>
+
+              {/* Push:Pull balance bar */}
+              {pushSets > 0 && pullSets > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Push · Pull Balance</p>
+                  <div className="h-3 rounded-full overflow-hidden flex">
+                    <div className="h-full transition-[width] duration-500" style={{ width: `${pushPct}%`, backgroundColor: CAT_COLOR.push ?? "#10b981" }} />
+                    <div className="h-full flex-1" style={{ backgroundColor: CAT_COLOR.pull ?? "#0ea5e9" }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span style={{ color: CAT_COLOR.push }}>Push {Math.round(pushPct)}%</span>
+                    <span style={{ color: CAT_COLOR.pull }}>Pull {Math.round(100 - pushPct)}%</span>
+                  </div>
+                </div>
+              )}
             </div>
           )
       }
