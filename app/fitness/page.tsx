@@ -37,8 +37,9 @@ type SetDraft = {
   completed: boolean;
 };
 
-type ProgressPt = { date: string; maxWeight: number; max1RM: number; volume: number };
-type MuscleFreq = { category: string; muscles: string[]; sessions: number; sets: number };
+type ProgressPt = { date: string; maxWeight: number; max1RM: number; volume: number; sets: number };
+type ProgressSummary = { pr: number; prDate: string | null; totalSessions: number; lastTrained: string | null; delta: number | null };
+type MuscleFreq = { muscle: string; category: string; sets: number; volume: number; sessions: number; lastTrained: string };
 
 type PendingExercise = {
   exerciseId: number; exerciseName: string; category: string; equipmentType: string;
@@ -1903,7 +1904,8 @@ function PlanTab({ allExercises }: { allExercises: ExRow[] }) {
 function ProgressTab() {
   const [loggedExercises, setLoggedExercises] = useState<ExRow[]>([]);
   const [selectedId, setSelectedId]           = useState<number | null>(null);
-  const [data, setData]                       = useState<ProgressPt[]>([]);
+  const [points, setPoints]                   = useState<ProgressPt[]>([]);
+  const [summary, setSummary]                 = useState<ProgressSummary | null>(null);
   const [loading, setLoading]                 = useState(false);
   const [unit, setUnit]                       = useState<"kg"|"lbs">("kg");
 
@@ -1916,13 +1918,18 @@ function ProgressTab() {
     if (!selectedId) return;
     setLoading(true);
     fetch(`/api/fitness/progress?exerciseId=${selectedId}`).then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setData(d); })
+      .then(d => {
+        if (d && typeof d === "object" && "points" in d) {
+          setPoints(d.points ?? []);
+          setSummary(d.summary ?? null);
+        }
+      })
       .finally(() => setLoading(false));
   }, [selectedId]);
 
   const conv = (kg: number) => unit === "kg" ? kg : Math.round(kg * 2.205 * 10) / 10;
-  const u = unit;
-  const chartData = data.map(d => ({ date: fmtDate(d.date), weight: conv(d.maxWeight), e1RM: conv(d.max1RM) }));
+  const u    = unit;
+  const chartData = points.map(p => ({ date: fmtDate(p.date), weight: conv(p.maxWeight), e1RM: conv(p.max1RM) }));
 
   if (loggedExercises.length === 0) {
     return (
@@ -1952,34 +1959,68 @@ function ProgressTab() {
         </div>
       </div>
 
-      {loading ? <div className="h-48 rounded-xl bg-muted animate-pulse" /> : data.length < 2 ? (
-        <div className="rounded-xl border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">Log this exercise in 2+ sessions to see the trend.</p>
-        </div>
+      {loading ? (
+        <div className="h-48 rounded-xl bg-muted animate-pulse" />
       ) : (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={chartData} margin={{ top:4, right:8, bottom:0, left:-16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="date" tick={{ fontSize:10, fill:"var(--muted-foreground)" }} />
-              <YAxis tick={{ fontSize:10, fill:"var(--muted-foreground)" }} unit={u} />
-              <Tooltip contentStyle={{ backgroundColor:"var(--card)", border:"1px solid var(--border)", borderRadius:8, fontSize:12 }}
-                formatter={(v: unknown) => [`${v}${u}`, ""]} />
-              <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={2} dot={{ fill:"#10b981", r:3 }} name="Max weight" />
-              <Line type="monotone" dataKey="e1RM" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" dot={false} name="Est. 1RM" />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="flex gap-4 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-500 inline-block"/>Max weight</span>
-            <span className="flex items-center gap-1.5"><span className="h-px w-4 border-t-2 border-dashed border-indigo-500 inline-block"/>Est. 1RM</span>
-          </div>
-        </div>
+        <>
+          {summary && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-border bg-card p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">PR</p>
+                <p className="text-xl font-bold tabular-nums mt-0.5">{conv(summary.pr)}<span className="text-xs font-normal text-muted-foreground ml-0.5">{u}</span></p>
+                {summary.prDate && <p className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(summary.prDate)}</p>}
+              </div>
+              <div className="rounded-xl border border-border bg-card p-3">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Sessions</p>
+                <p className="text-xl font-bold tabular-nums mt-0.5">{summary.totalSessions}</p>
+                {summary.lastTrained && <p className="text-[10px] text-muted-foreground mt-0.5">Last {fmtDate(summary.lastTrained)}</p>}
+              </div>
+              <div className="rounded-xl border border-border bg-card p-3 col-span-2">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">vs previous session</p>
+                {summary.delta !== null ? (
+                  <p className={`text-xl font-bold tabular-nums mt-0.5 ${summary.delta > 0 ? "text-emerald-400" : summary.delta < 0 ? "text-rose-400" : "text-muted-foreground"}`}>
+                    {summary.delta > 0 ? "+" : ""}{conv(summary.delta)}{u}
+                  </p>
+                ) : (
+                  <p className="text-xl font-bold text-muted-foreground mt-0.5">—</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {points.length >= 2 && (
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={chartData} margin={{ top:4, right:8, bottom:0, left:-16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="date" tick={{ fontSize:10, fill:"var(--muted-foreground)" }} />
+                  <YAxis tick={{ fontSize:10, fill:"var(--muted-foreground)" }} unit={u} />
+                  <Tooltip contentStyle={{ backgroundColor:"var(--card)", border:"1px solid var(--border)", borderRadius:8, fontSize:12 }}
+                    formatter={(v: unknown) => [`${v}${u}`, ""]} />
+                  <Line type="monotone" dataKey="weight" stroke="#10b981" strokeWidth={2} dot={{ fill:"#10b981", r:3 }} name="Max weight" />
+                  <Line type="monotone" dataKey="e1RM" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" dot={false} name="Est. 1RM" />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="flex gap-4 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-emerald-500 inline-block"/>Max weight</span>
+                <span className="flex items-center gap-1.5"><span className="h-px w-4 border-t-2 border-dashed border-indigo-500 inline-block"/>Est. 1RM</span>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 // ── Muscles tab ────────────────────────────────────────────────────────────────
+
+function daysSince(iso: string) {
+  const diff = Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return `${diff}d ago`;
+}
 
 function MusclesTab() {
   const [days, setDays]       = useState(7);
@@ -1993,8 +2034,7 @@ function MusclesTab() {
       .finally(() => setLoading(false));
   }, [days]);
 
-  const maxSessions = Math.max(...data.map(d => d.sessions), 1);
-  const IDEAL: Record<string, number> = { push:2, pull:2, legs:2, core:3, cardio:2, other:1 };
+  const maxSets = Math.max(...data.map(d => d.sets), 1);
 
   return (
     <div className="space-y-5">
@@ -2009,34 +2049,41 @@ function MusclesTab() {
 
       {loading
         ? Array.from({length:6},(_,i)=><div key={i} className="h-16 rounded-xl bg-muted animate-pulse"/>)
-        : (
-          <div className="space-y-3">
-            {data.map(d => {
-              const ideal = IDEAL[d.category] ?? 1;
-              const weekRatio = days === 7 ? d.sessions/ideal : d.sessions/(ideal*Math.round(days/7));
-              const statusColor = d.sessions===0 ? "text-muted-foreground" : weekRatio>=1 ? "text-emerald-400" : weekRatio>=0.5 ? "text-amber-400" : "text-rose-400";
-              return (
-                <div key={d.category} className="rounded-xl border border-border bg-card p-4 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CAT_COLOR[d.category] }} />
-                      <span className="text-sm font-semibold capitalize">{d.category}</span>
+        : data.length === 0
+          ? (
+            <div className="rounded-xl border border-dashed border-border p-8 text-center">
+              <p className="text-sm text-muted-foreground">No completed workouts in this window.</p>
+            </div>
+          )
+          : (
+            <div className="space-y-2.5">
+              {data.map(d => {
+                const daysAgo = Math.floor((Date.now() - new Date(d.lastTrained + "T00:00:00").getTime()) / 86400000);
+                const freshColor = daysAgo === 0 ? "text-emerald-400" : daysAgo <= 2 ? "text-emerald-400" : daysAgo <= 5 ? "text-amber-400" : "text-rose-400";
+                const color = CAT_COLOR[d.category] ?? "#6b7280";
+                return (
+                  <div key={d.muscle} className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-sm font-semibold truncate">{d.muscle}</span>
+                        <span className="text-[10px] text-muted-foreground capitalize shrink-0">{d.category}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 text-right">
+                        <span className="text-xs text-muted-foreground">{d.sets} sets</span>
+                        <span className="text-xs text-muted-foreground">{d.volume > 0 ? `${d.volume}kg` : ""}</span>
+                        <span className={`text-xs font-medium ${freshColor}`}>{daysSince(d.lastTrained)}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {d.sets > 0 && <span className="text-[11px] text-muted-foreground">{d.sets} sets</span>}
-                      <span className={`text-sm font-bold tabular-nums ${statusColor}`}>{d.sessions}</span>
-                      <span className="text-xs text-muted-foreground">session{d.sessions!==1?"s":""}</span>
+                    <div className="h-1 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full transition-[width] duration-500"
+                        style={{ width:`${(d.sets / maxSets) * 100}%`, backgroundColor: color }}/>
                     </div>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500"
-                      style={{ width:`${(d.sessions/maxSessions)*100}%`, backgroundColor:CAT_COLOR[d.category] }}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
+                );
+              })}
+            </div>
+          )
       }
     </div>
   );

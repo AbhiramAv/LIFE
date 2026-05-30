@@ -1,18 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, workoutSets, workoutSessions, exercises } from "@/lib/db";
+import { db, workoutSets, workoutSessions, daySets, dayWorkouts, exercises } from "@/lib/db";
 import { eq, and, gte, inArray } from "drizzle-orm";
 import { getUser, unauthorized } from "@/lib/supabase/get-user";
-
-const CATEGORIES = ["push", "pull", "legs", "core", "cardio", "other"];
-
-const CATEGORY_MUSCLES: Record<string, string[]> = {
-  push:    ["Chest", "Shoulders", "Triceps"],
-  pull:    ["Back", "Biceps", "Rear Delts"],
-  legs:    ["Quads", "Hamstrings", "Glutes", "Calves"],
-  core:    ["Abs", "Obliques", "Lower Back"],
-  cardio:  ["Cardiovascular", "Full Body"],
-  other:   ["Mixed"],
-};
 
 export async function GET(req: NextRequest) {
   const user = await getUser();
@@ -21,46 +10,81 @@ export async function GET(req: NextRequest) {
   const days   = parseInt(req.nextUrl.searchParams.get("days") ?? "7");
   const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 
-  const sessions = await db
+  type Row = { date: string; muscle: string; category: string; weight: number; reps: number };
+  const rows: Row[] = [];
+
+  // Old system
+  const oldSessions = await db
     .select({ id: workoutSessions.id, date: workoutSessions.date })
     .from(workoutSessions)
     .where(and(eq(workoutSessions.userId, user.id), gte(workoutSessions.date, cutoff)));
 
-  if (sessions.length === 0) {
-    return NextResponse.json(CATEGORIES.map(c => ({ category: c, muscles: CATEGORY_MUSCLES[c], sessions: 0, sets: 0 })));
-  }
+  if (oldSessions.length > 0) {
+    const sessionIds     = oldSessions.map(s => s.id);
+    const sessionDateMap = Object.fromEntries(oldSessions.map(s => [s.id, s.date]));
 
-  const sessionIds = sessions.map(s => s.id);
+    const oldRows = await db
+      .select({
+        sessionId: workoutSets.sessionId,
+        reps:      workoutSets.reps,
+        weight:    workoutSets.weightKg,
+        muscle:    exercises.muscleGroups,
+        category:  exercises.category,
+      })
+      .from(workoutSets)
+      .innerJoin(exercises, eq(workoutSets.exerciseId, exercises.id))
+      .where(inArray(workoutSets.sessionId, sessionIds));
 
-  const sets = await db
-    .select({ sessionId: workoutSets.sessionId, exerciseId: workoutSets.exerciseId })
-    .from(workoutSets)
-    .where(inArray(workoutSets.sessionId, sessionIds));
-
-  const exerciseIds = [...new Set(sets.map(s => s.exerciseId))];
-  const exerciseRows = exerciseIds.length > 0
-    ? await db.select({ id: exercises.id, category: exercises.category }).from(exercises).where(inArray(exercises.id, exerciseIds))
-    : [];
-  const categoryByExercise = Object.fromEntries(exerciseRows.map(e => [e.id, e.category]));
-
-  // Per category: unique session IDs + total sets
-  const stats: Record<string, { sessions: Set<number>; sets: number }> = {};
-  for (const cat of CATEGORIES) stats[cat] = { sessions: new Set(), sets: 0 };
-
-  for (const set of sets) {
-    const cat = categoryByExercise[set.exerciseId] ?? "other";
-    if (stats[cat]) {
-      stats[cat].sessions.add(set.sessionId);
-      stats[cat].sets++;
+    for (const r of oldRows) {
+      rows.push({ date: sessionDateMap[r.sessionId], muscle: r.muscle, category: r.category, weight: r.weight ?? 0, reps: r.reps ?? 0 });
     }
   }
 
-  return NextResponse.json(
-    CATEGORIES.map(c => ({
-      category: c,
-      muscles:  CATEGORY_MUSCLES[c],
-      sessions: stats[c].sessions.size,
-      sets:     stats[c].sets,
+  // New system
+  const newRows = await db
+    .select({
+      date:     dayWorkouts.date,
+      reps:     daySets.actualReps,
+      weight:   daySets.actualWeight,
+      muscle:   exercises.muscleGroups,
+      category: exercises.category,
+    })
+    .from(daySets)
+    .innerJoin(dayWorkouts, eq(daySets.dayWorkoutId, dayWorkouts.id))
+    .innerJoin(exercises,   eq(daySets.exerciseId, exercises.id))
+    .where(and(
+      eq(dayWorkouts.userId, user.id),
+      eq(daySets.completed, true),
+      gte(dayWorkouts.date, cutoff),
+    ));
+
+  for (const r of newRows) {
+    rows.push({ date: r.date, muscle: r.muscle, category: r.category, weight: r.weight ?? 0, reps: r.reps ?? 0 });
+  }
+
+  // Aggregate by muscle
+  const agg: Record<string, { muscle: string; category: string; sets: number; volume: number; dates: Set<string>; lastTrained: string }> = {};
+
+  for (const r of rows) {
+    if (!agg[r.muscle]) {
+      agg[r.muscle] = { muscle: r.muscle, category: r.category, sets: 0, volume: 0, dates: new Set(), lastTrained: r.date };
+    }
+    agg[r.muscle].sets++;
+    agg[r.muscle].volume += r.weight * r.reps;
+    agg[r.muscle].dates.add(r.date);
+    if (r.date > agg[r.muscle].lastTrained) agg[r.muscle].lastTrained = r.date;
+  }
+
+  const result = Object.values(agg)
+    .map(m => ({
+      muscle:      m.muscle,
+      category:    m.category,
+      sets:        m.sets,
+      volume:      Math.round(m.volume),
+      sessions:    m.dates.size,
+      lastTrained: m.lastTrained,
     }))
-  );
+    .sort((a, b) => b.sets - a.sets);
+
+  return NextResponse.json(result);
 }
