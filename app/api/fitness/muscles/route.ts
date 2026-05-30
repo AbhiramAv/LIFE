@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, workoutSets, workoutSessions, daySets, dayWorkouts, exercises } from "@/lib/db";
-import { eq, and, gte, inArray } from "drizzle-orm";
+import { eq, and, gte, lt, inArray } from "drizzle-orm";
 import { getUser, unauthorized } from "@/lib/supabase/get-user";
 
 export async function GET(req: NextRequest) {
   const user = await getUser();
   if (!user) return unauthorized();
 
-  const days   = parseInt(req.nextUrl.searchParams.get("days") ?? "7");
-  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const days    = parseInt(req.nextUrl.searchParams.get("days")   ?? "7");
+  const offset  = parseInt(req.nextUrl.searchParams.get("offset") ?? "0");
+  const endMs   = Date.now() - offset * 86400000;
+  const cutoff  = new Date(endMs - days * 86400000).toISOString().slice(0, 10);
+  const endDate = offset > 0 ? new Date(endMs).toISOString().slice(0, 10) : null;
 
   type Row = { date: string; muscle: string; category: string; weight: number; reps: number };
   const rows: Row[] = [];
@@ -17,7 +20,9 @@ export async function GET(req: NextRequest) {
   const oldSessions = await db
     .select({ id: workoutSessions.id, date: workoutSessions.date })
     .from(workoutSessions)
-    .where(and(eq(workoutSessions.userId, user.id), gte(workoutSessions.date, cutoff)));
+    .where(endDate
+      ? and(eq(workoutSessions.userId, user.id), gte(workoutSessions.date, cutoff), lt(workoutSessions.date, endDate))
+      : and(eq(workoutSessions.userId, user.id), gte(workoutSessions.date, cutoff)));
 
   if (oldSessions.length > 0) {
     const sessionIds     = oldSessions.map(s => s.id);
@@ -52,11 +57,9 @@ export async function GET(req: NextRequest) {
     .from(daySets)
     .innerJoin(dayWorkouts, eq(daySets.dayWorkoutId, dayWorkouts.id))
     .innerJoin(exercises,   eq(daySets.exerciseId, exercises.id))
-    .where(and(
-      eq(dayWorkouts.userId, user.id),
-      eq(daySets.completed, true),
-      gte(dayWorkouts.date, cutoff),
-    ));
+    .where(endDate
+      ? and(eq(dayWorkouts.userId, user.id), eq(daySets.completed, true), gte(dayWorkouts.date, cutoff), lt(dayWorkouts.date, endDate))
+      : and(eq(dayWorkouts.userId, user.id), eq(daySets.completed, true), gte(dayWorkouts.date, cutoff)));
 
   for (const r of newRows) {
     rows.push({ date: r.date, muscle: r.muscle, category: r.category, weight: r.weight ?? 0, reps: r.reps ?? 0 });
