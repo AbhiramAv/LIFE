@@ -285,5 +285,6 @@ export const calendarEvents = pgTable("calendar_events", {
   date: text("date").notNull(),   // YYYY-MM-DD
   time: text("time"),             // HH:MM (optional)
   color: text("color").notNull().default("#6366f1"),
+  important: boolean("important").notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`now()`),
 });

@@ -30,6 +30,7 @@ type Habit       = { id: number; name: string; biggerGoal: string | null; color:
 type TodayLog    = { habitId: number; logStatus: string };
 type WeekCount   = { habitId: number; doneThisWeek: number };
 type PendingDone = { id: number };
+type CalEvent    = { id: number; title: string; date: string; time: string | null; color: string };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1065,6 +1066,63 @@ function AnalyticsContent({ habitLogs, workouts, sprintIssues, allIssues, totalH
   );
 }
 
+// ─── Upcoming events strip ────────────────────────────────────────────────────
+
+function UpcomingEventsStrip({ events, today }: { events: CalEvent[]; today: string }) {
+  const cutoff = dateStr(new Date(new Date(today + "T00:00:00").getTime() + 7 * 86400000));
+  const upcoming = events.filter(e => e.date >= today && e.date <= cutoff)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (upcoming.length === 0) return null;
+
+  function daysUntil(iso: string) {
+    return Math.round((new Date(iso + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000);
+  }
+  function ticker(iso: string) {
+    const d = daysUntil(iso);
+    if (d === 0) return "Today";
+    if (d === 1) return "Tomorrow";
+    return `D-${d}`;
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+        <Calendar className="h-3 w-3" /> Upcoming
+      </p>
+      <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+        {upcoming.map(ev => {
+          const d = daysUntil(ev.date);
+          const urgent = d <= 2;
+          return (
+            <Link key={ev.id} href="/calendar"
+              className="flex-shrink-0 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border bg-card hover:border-primary/30 transition-colors min-w-[160px] max-w-[220px]"
+              style={{ borderColor: ev.color + "40" }}>
+              <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: ev.color }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate">{ev.title}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {new Date(ev.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {ev.time && ` · ${ev.time}`}
+                </p>
+              </div>
+              <span className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full shrink-0"
+                style={{
+                  color: urgent ? ev.color : undefined,
+                  backgroundColor: urgent ? ev.color + "18" : undefined,
+                  borderColor: urgent ? ev.color + "50" : undefined,
+                  border: urgent ? "1px solid" : undefined,
+                  ...(urgent ? {} : { color: "var(--muted-foreground)" }),
+                }}>
+                {ticker(ev.date)}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -1081,13 +1139,14 @@ export default function DashboardPage() {
   const [sprintOpen, setSprintOpen]   = useState(false);
   const [pendingDone, setPendingDone] = useState<PendingDone|null>(null);
   const [selectedIssue, setSelectedIssue] = useState<AnyIssue|null>(null);
+  const [calEvents, setCalEvents]         = useState<CalEvent[]>([]);
   const sprintIds = useMemo(()=>new Set(sprintIssues.map(i=>i.id)),[sprintIssues]);
 
   useEffect(()=>{
     async function load(){
       try{
         const safe=(r:Response)=>r.ok?r.json():Promise.resolve(null);
-        const [moodData,habitsData,sprintData,logsData,workoutsData,weekData,allIssuesData]=await Promise.all([
+        const [moodData,habitsData,sprintData,logsData,workoutsData,weekData,allIssuesData,calData]=await Promise.all([
           fetch(`/api/mood?date=${today}`).then(safe),
           fetch("/api/habits").then(safe),
           fetch("/api/issues?sprint=true").then(safe),
@@ -1095,6 +1154,7 @@ export default function DashboardPage() {
           fetch("/api/fitness/sessions").then(safe),
           fetch("/api/habits/logs/week").then(safe),
           fetch("/api/issues?all=true").then(safe),
+          fetch("/api/calendar").then(safe),
         ]);
         setMood(moodData?.moodScore?moodData:null);
         setHabits(Array.isArray(habitsData)?habitsData:[]);
@@ -1102,6 +1162,7 @@ export default function DashboardPage() {
         setAllIssues(Array.isArray(allIssuesData)?allIssuesData:[]);
         setHabitLogs(Array.isArray(logsData)?logsData:[]);
         setWorkouts(Array.isArray(workoutsData)?workoutsData:[]);
+        setCalEvents(Array.isArray(calData)?calData:[]);
         const wc:Record<number,number>={};
         (Array.isArray(weekData)?weekData:[]).forEach((r:WeekCount)=>{wc[r.habitId]=r.doneThisWeek;});
         setWeekCounts(wc);
@@ -1187,6 +1248,9 @@ export default function DashboardPage() {
           <>
             {/* Glance grid */}
             <GlanceGrid mood={mood} weeklyPct={weeklyPct} workouts={workouts} moodAlert={isEvening && !mood}/>
+
+            {/* Upcoming calendar events (≤7 days) */}
+            <UpcomingEventsStrip events={calEvents} today={today}/>
 
             {/* Habit carousel */}
             {habits.length > 0 && (
